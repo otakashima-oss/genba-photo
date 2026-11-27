@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5fa8">
+<title>現場写真</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="現場写真">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+  /* 画面の高さに収める。写真の見本とコメント欄が残りの高さを分け合う */
+  :root { --main: #1f5fa8; --main-dark: #174a84; --on-main: #fff; --rec: #d93025; --ok: #1e7b3a; --bg: #f3f6fa; --text: #1f2933; --sub: #5b6875; --line: #c9d3de; --white: #fff; }
+  * { box-sizing: border-box; }
+  html { font-size: 17.5px; }
+  html, body { height: 100%; }
+  body { margin: 0; font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; -webkit-text-size-adjust: 100%; overflow: hidden; }
+  .app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; max-width: 560px; margin: 0 auto; }
+
+  header { flex: none; background: var(--main); color: var(--on-main); padding: 8px 12px; padding-top: calc(8px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 8px; }
+  header h1 { font-size: 1.05rem; margin: 0; flex: none; }
+  .who { margin-left: auto; min-width: 0; max-width: 62%; background: rgba(255,255,255,.18); color: var(--on-main); border: 1px solid rgba(255,255,255,.5); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 0; }
+  .row { flex: none; display: flex; align-items: center; gap: 8px; }
+  .row label { font-weight: 700; font-size: .9rem; white-space: nowrap; }
+  .row input { flex: 1; min-width: 0; }
+
+  .photo { flex: 1.2; min-height: 120px; position: relative; border: 2px dashed var(--line); border-radius: 10px; background: var(--white); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .photo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .photo .empty { color: var(--sub); font-size: .9rem; text-align: center; padding: 8px; }
+  .photo .clear { position: absolute; top: 6px; right: 6px; border: 0; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; font: inherit; font-size: .8rem; padding: 3px 10px; }
+  .photo-btns { flex: none; display: flex; gap: 8px; }
+  .photo-btns label { flex: 1; text-align: center; padding: 10px 6px; border-radius: 8px; font-weight: 700; font-size: .95rem; background: var(--main); color: var(--on-main); }
+  .photo-btns label.sub { background: var(--white); color: var(--main); border: 1px solid var(--main); }
+  .photo-btns input { display: none; }
+  .shot-at { flex: none; font-size: .8rem; color: var(--sub); min-height: 1.2em; margin: -4px 0 0; }
+
+  .rec-row { flex: none; display: flex; align-items: center; gap: 10px; }
+  .rec-btn { flex: none; width: 64px; height: 64px; border-radius: 50%; border: 0; background: var(--rec); color: var(--white); font: inherit; font-weight: 700; font-size: .95rem; box-shadow: 0 3px 10px rgba(0,0,0,.2); }
+  .rec-btn.on { background: var(--text); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(217,48,37,.5); } 100% { box-shadow: 0 0 0 14px rgba(217,48,37,0); } }
+  .rec-row textarea { flex: 1; }
+  .hint { font-size: .82rem; color: var(--sub); margin: 0; line-height: 1.45; }
+  .interim { flex: none; color: var(--sub); font-size: .85rem; min-height: 1.2em; max-height: 2.6em; overflow: hidden; margin-top: -4px; }
+
+  input, textarea { width: 100%; font: inherit; font-size: 1rem; padding: 8px 10px; border: 1px solid #b7c3cf; border-radius: 8px; background: var(--white); color: var(--text); }
+  textarea { height: 5.2em; resize: none; }
+
+  footer { flex: none; padding: 8px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .outbox { display: flex; align-items: center; gap: 8px; font-size: .85rem; background: #fff6e0; border: 1px solid #f0c36d; border-radius: 8px; padding: 4px 8px; margin-bottom: 6px; }
+  .outbox .btn { width: auto; margin: 0 0 0 auto; padding: 4px 10px; font-size: .85rem; }
+  .btn { display: block; width: 100%; padding: 13px; border: 0; border-radius: 8px; font: inherit; font-weight: 700; font-size: 1.05rem; background: var(--main); color: var(--on-main); margin-top: 10px; }
+  .btn.ok { background: var(--ok); color: var(--white); margin-top: 0; }
+  .btn.sub { background: var(--white); color: var(--main); border: 1px solid var(--main); padding: 9px; font-size: .95rem; }
+  .btn:disabled { opacity: .6; }
+
+  .msg { position: fixed; left: 50%; transform: translateX(-50%); top: calc(52px + env(safe-area-inset-top)); width: calc(100% - 24px); max-width: 536px; z-index: 20; border-radius: 8px; padding: 10px 12px; font-size: .95rem; display: none; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+  .msg.show { display: block; }
+  .msg.err { background: #fdecea; border: 1px solid #e6a39b; color: #8a2a20; }
+  .msg.good { background: #e8f6ec; border: 1px solid #8fcea2; color: #1c5a30; }
+  .msg.info { background: #fff6e0; border: 1px solid #f0c36d; }
+
+  .overlay { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { background: var(--white); width: 100%; max-width: 560px; max-height: 92%; overflow: auto; border-radius: 14px 14px 0 0; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .sheet h2 { font-size: 1rem; margin: 0 0 8px; }
+  .sheet label { display: block; font-weight: 700; font-size: .9rem; margin: 10px 0 4px; }
+  .sheet ol { margin: 6px 0 0; padding-left: 1.4em; font-size: .9rem; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>現場写真</h1>
+    <button id="open-settings" class="who" type="button" aria-label="社員名を登録・変更する">👤 <span id="who">（未登録）</span></button>
+  </header>
+
+  <main>
+    <div class="row">
+      <label for="site">現場名</label>
+      <input id="site" list="site-list" autocomplete="off" placeholder="例）山田様邸 太陽光">
+      <datalist id="site-list"></datalist>
+    </div>
+
+    <div class="photo" id="photo">
+      <div class="empty" id="photo-empty">下のボタンで写真を撮ってください</div>
+      <img id="preview" alt="撮った写真" hidden>
+      <button id="photo-clear" class="clear" type="button" hidden>撮り直す</button>
+    </div>
+    <p class="shot-at" id="shot-at"></p>
+    <div class="photo-btns">
+      <label>📷 写真を撮る<input id="camera" type="file" accept="image/*" capture="environment"></label>
+      <label class="sub">🖼 アルバムから<input id="album" type="file" accept="image/*"></label>
+    </div>
+
+    <div class="rec-row">
+      <button id="rec" class="rec-btn" type="button" aria-pressed="false">話す</button>
+      <textarea id="comment" placeholder="コメント（「話す」を押して話すと文字になります。直せます）"></textarea>
+    </div>
+    <p class="hint" id="no-speech" hidden>「話す」が使えない機種です。コメント欄をタップし、キーボードの<b>マイク</b>で話してください。</p>
+    <div class="interim" id="interim" aria-live="polite"></div>
+  </main>
+
+  <footer>
+    <div id="outbox" class="outbox" hidden>
+      <span>まだ送れていない記録：<b id="outbox-count">0</b>件</span>
+      <button id="outbox-send" class="btn sub" type="button">今すぐ送る</button>
+    </div>
+    <button id="send" class="btn ok" type="button">この写真を送る</button>
+  </footer>
+</div>
+
+<div id="msg" class="msg" role="status" tabindex="-1"></div>
+
+<div id="settings" class="overlay" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <h2 id="settings-title">はじめの登録（この携帯で1回だけ）</h2>
+    <label for="employee">撮影者（社員名）</label>
+    <p class="hint">報告書の「撮影者」に、この名前が載ります。</p>
+    <input id="employee" autocomplete="name" placeholder="例）山田 太郎">
+    <label for="report-to">写真の送り先（メールアドレス）</label>
+    <input id="report-to" type="email" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="会社から聞いたアドレス">
+    <p class="hint" style="margin-top:8px">はじめて送るときに Google のログイン画面が出ます。送る Google アカウントでログインし、「メールの送信」を許可してください。</p>
+    <button id="save-settings" class="btn" type="button">登録する</button>
+    <button id="settings-close" class="btn sub" type="button">閉じる</button>
+    <button id="open-install" class="btn sub" type="button">📲 ホーム画面への追加のしかた</button>
+  </section>
+</div>
+
+<div id="install" class="overlay" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="install-title">
+    <h2 id="install-title">ホーム画面に追加すると、アプリとして使えます</h2>
+    <p class="hint" id="install-done" hidden>この画面は、もうホーム画面のアイコンから開いています（追加済みです）。</p>
+    <ol id="install-ios" hidden>
+      <li><b>iPhone</b>：Safari の下にある <b>共有ボタン</b>（四角から上向きの矢印）を押す</li>
+      <li><b>「ホーム画面に追加」</b>を押す</li>
+      <li>右上の<b>「追加」</b>を押す → ホーム画面に「現場写真」のアイコンができます</li>
+    </ol>
+    <ol id="install-android" hidden>
+      <li><b>Android</b>：Chrome の右上の <b>︙（メニュー）</b>を押す</li>
+      <li><b>「ホーム画面に追加」</b>（または「アプリをインストール」）を押す</li>
+      <li><b>「追加」</b>を押す</li>
+    </ol>
+    <button id="install-btn" class="btn" type="button" hidden>ホーム画面に追加する</button>
+    <button id="install-close" class="btn sub" type="button">閉じる</button>
+  </section>
+</div>
+
+<script src="config.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="app.js"></script>
+</body>
+</html>
