@@ -2,21 +2,22 @@
    1. 現場名を入れる（前に使った現場名は候補に出る）
    2. 写真を撮る（またはアルバムから選ぶ）→ 長い辺 1600px の JPEG に縮める。撮影日時は写真の情報（EXIF）から読む
    3. 「話す」でコメントを文字にする（使えない機種はキーボードのマイク）
-   4. 「この写真を送る」：現場名・撮影者・撮影日時・コメント・写真を、この携帯から Gmail で直接送る（Gmail API）
+   4. 「この写真を送る」：写真を本人の Google ドライブの「現場写真（アプリ）」フォルダに保存する（Drive API、drive.file）
+      現場名・撮影者・撮影日時・コメントは、ファイルの説明（description）に JSON で入れる
       電波がないときは携帯（IndexedDB）に保存し、電波が戻ったら送る
-   受け取ったメールは、パソコンのサーバー（server/mail-worker.mjs）が現場ごとのフォルダに保存する。
-   設定（config.js）：window.GOOGLE_CLIENT_ID、window.REPORT_TO（送り先のはじめの値） */
+   事務所の画面（office.html）が、ドライブから指定のフォルダに取り込み、報告書を作る。
+   設定（config.js）：window.GOOGLE_CLIENT_ID */
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var MAX_SEC = 90, MAX_PX = 1600, QUALITY = 0.82;
-  var SEND = 'https://www.googleapis.com/auth/gmail.send';
-  var SCOPE = SEND + ' email';
+  var DRIVE = 'https://www.googleapis.com/auth/drive.file'; // このアプリが作ったファイルだけを扱える許可
+  var SCOPE = DRIVE + ' email';
+  var FOLDER = '現場写真（アプリ）';
   var store = {
     get: function (k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
     set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
     del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
   };
-  if (!store.get('report_to') && window.REPORT_TO) store.set('report_to', window.REPORT_TO);
 
   // ---------- お知らせ ----------
   var msgTimer = null;
@@ -55,23 +56,20 @@
     setDraft: function (v) { return tx('draft', 'readwrite', function (s) { if (v) s.put(v, 'photo'); else s.delete('photo'); }); }
   };
 
-  // ---------- 撮影者・送り先 ----------
-  function validMail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
+  // ---------- 撮影者 ----------
   function showWho() { $('who').textContent = store.get('employee') || '（未登録）'; }
   function openSettings() {
     $('employee').value = store.get('employee');
-    $('report-to').value = store.get('report_to');
-    $('settings-close').hidden = !(store.get('employee') && store.get('report_to'));
+    $('settings-close').hidden = !store.get('employee');
     $('install').hidden = true;
     $('settings').hidden = false;
   }
   $('settings-close').onclick = function () { $('settings').hidden = true; };
   $('open-settings').onclick = openSettings;
   $('save-settings').onclick = function () {
-    var name = $('employee').value.trim(), to = $('report-to').value.trim();
+    var name = $('employee').value.trim();
     if (!name) { show('撮影者（社員名）を入れてください。', 'err'); return; }
-    if (!validMail(to)) { show('写真の送り先のメールアドレスを確かめてください。', 'err'); return; }
-    store.set('employee', name); store.set('report_to', to); showWho(); $('settings').hidden = true;
+    store.set('employee', name); showWho(); $('settings').hidden = true;
     show(name + ' さんで登録しました。', 'good');
     if (ios || android) showInstall();
   };
@@ -203,26 +201,27 @@
   }
   $('rec').onclick = function () { if (recording) stopRec(); else startRec(); };
 
-  // ---------- Google ログイン（Gmail の送信の許可） ----------
+  // ---------- Google ログイン（Google ドライブの許可：このアプリが作ったファイルだけ） ----------
   var token = null, tokenExp = 0, tokenClient = null;
-  try { var t0 = JSON.parse(localStorage.getItem('gmail_token') || 'null'); if (t0 && t0.exp > Date.now()) { token = t0.token; tokenExp = t0.exp; } } catch (e) {}
+  try { var t0 = JSON.parse(localStorage.getItem('drive_token') || 'null'); if (t0 && t0.exp > Date.now()) { token = t0.token; tokenExp = t0.exp; } } catch (e) {}
   function hasToken() { return token && tokenExp - 60000 > Date.now(); }
+  function dropToken() { token = null; tokenExp = 0; store.del('drive_token'); }
   function getToken() {
     if (hasToken()) return Promise.resolve(token);
     return new Promise(function (resolve, reject) {
-      if (!window.GOOGLE_CLIENT_ID) return reject(new Error('送信の設定（Google のクライアント ID）がまだです。管理者に連絡してください。'));
+      if (!window.GOOGLE_CLIENT_ID) return reject(new Error('Google の設定（クライアント ID）がまだです。管理者に連絡してください。'));
       if (!window.google || !google.accounts || !google.accounts.oauth2) return reject(new Error('Google のログイン画面を読み込めませんでした。電波を確かめてください。'));
       tokenClient = tokenClient || google.accounts.oauth2.initTokenClient({ client_id: window.GOOGLE_CLIENT_ID, scope: SCOPE, callback: function () {} });
       tokenClient.callback = function (r) {
-        if (r.error || !r.access_token) return reject(new Error('Google のログイン・送信の許可ができませんでした（' + (r.error || '不明') + '）。'));
-        if (google.accounts.oauth2.hasGrantedAllScopes && !google.accounts.oauth2.hasGrantedAllScopes(r, SEND)) return reject(new Error('「メールの送信」にチェックを入れて許可してください。'));
+        if (r.error || !r.access_token) return reject(new Error('Google のログイン・許可ができませんでした（' + (r.error || '不明') + '）。'));
+        if (google.accounts.oauth2.hasGrantedAllScopes && !google.accounts.oauth2.hasGrantedAllScopes(r, DRIVE)) return reject(new Error('「Google ドライブ」の許可にチェックを入れてください。'));
         token = r.access_token; tokenExp = Date.now() + Number(r.expires_in || 3600) * 1000;
-        try { localStorage.setItem('gmail_token', JSON.stringify({ token: token, exp: tokenExp })); } catch (e) {}
+        try { localStorage.setItem('drive_token', JSON.stringify({ token: token, exp: tokenExp })); } catch (e) {}
         rememberAccount(token);
         resolve(token);
       };
       tokenClient.error_callback = function (e) { reject(new Error(e && e.type === 'popup_closed' ? 'Google のログイン画面が閉じられました。もう一度送ってください。' : 'Google のログイン画面を開けませんでした。')); };
-      var opt = { prompt: store.get('google_ok') ? '' : 'consent' };
+      var opt = { prompt: store.get('drive_ok') ? '' : 'consent' };
       if (store.get('google_email')) opt.login_hint = store.get('google_email');
       tokenClient.requestAccessToken(opt);
     });
@@ -234,60 +233,63 @@
       .then(function (u) { if (u.email) store.set('google_email', u.email); }, function () {});
   }
 
-  // ---------- メールを作る（件名・本文は server/mail-worker.mjs が読む形） ----------
-  function b64(str) {
-    var bytes = new TextEncoder().encode(str), bin = '';
-    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin);
+  // ---------- Google ドライブに保存 ----------
+  // 通信できないときは e.offline（携帯に保存して後で送る）
+  function api(url, opt) {
+    return fetch(url, opt).then(function (res) {
+      if (res.ok) return res.json();
+      if (res.status === 401) dropToken();
+      return res.json().catch(function () { return {}; }).then(function (j) {
+        var e = new Error(res.status === 401 ? 'Google の許可が切れました。もう一度送ってください。' :
+          res.status === 403 && /has not been used|disabled/i.test((j.error && j.error.message) || '') ? 'Google ドライブの機能（API）が有効になっていません。管理者に連絡してください。' :
+          '保存できませんでした（' + res.status + (j.error && j.error.message ? '：' + j.error.message : '') + '）。');
+        e.status = res.status; throw e;
+      });
+    }, function () { var e = new Error('電波がないため送れませんでした。'); e.offline = true; throw e; });
   }
-  function wrap(s) { return s.replace(/.{76}/g, '$&\r\n'); }
-  function mime(r) {
-    var subject = '現場写真 ' + r.site + ' ' + r.employee + ' ' + r.shot;
-    var body = '現場名：' + r.site + '\n撮影者：' + r.employee + '\n撮影日時：' + r.shot + '\n送信日時：' + r.created +
-      '\n\n【コメント】\n' + (r.comment || '') + '\n';
-    var bd = 'genba_' + r.id;
-    var msg = [
-      'To: ' + r.to,
-      'Subject: =?UTF-8?B?' + b64(subject) + '?=',
-      'MIME-Version: 1.0',
-      'X-Genba-Id: ' + r.id,
-      'Content-Type: multipart/mixed; boundary="' + bd + '"',
-      '',
-      '--' + bd,
-      'Content-Type: text/plain; charset=UTF-8',
-      'Content-Transfer-Encoding: base64',
-      '',
-      wrap(b64(body)),
-      '--' + bd,
-      'Content-Type: image/jpeg; name="photo.jpg"',
-      'Content-Disposition: attachment; filename="photo.jpg"',
-      'Content-Transfer-Encoding: base64',
-      '',
-      wrap(r.photo),
-      '--' + bd + '--',
-      ''
-    ].join('\r\n');
-    var bin = '';
-    for (var i = 0; i < msg.length; i++) bin += msg.charAt(i); // msg は ASCII だけ
-    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  // 保存先のフォルダ（このアプリが作ったもの）。なければ作る
+  function folderId(tk) {
+    if (store.get('drive_folder')) return Promise.resolve(store.get('drive_folder'));
+    var q = "mimeType='application/vnd.google-apps.folder' and name='" + FOLDER + "' and trashed=false";
+    return api('https://www.googleapis.com/drive/v3/files?fields=files(id)&q=' + encodeURIComponent(q), { headers: { 'Authorization': 'Bearer ' + tk } })
+      .then(function (j) {
+        if (j.files && j.files.length) return j.files[0].id;
+        return api('https://www.googleapis.com/drive/v3/files?fields=id', {
+          method: 'POST', headers: { 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: FOLDER, mimeType: 'application/vnd.google-apps.folder', appProperties: { genbaFolder: '1' } })
+        }).then(function (f) { return f.id; });
+      })
+      .then(function (id) { store.set('drive_folder', id); return id; });
+  }
+  function bytes(b64s) { var bin = atob(b64s), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+  function safeName(s) { return String(s || '').replace(/[\\\/:*?"<>|\s]/g, '').slice(0, 30); }
+  function upload(tk, folder, r) {
+    // 事務所の画面（office.js）が読む形：description に JSON、appProperties.genba = 'v1'
+    var meta = {
+      name: r.shot.replace(/[-:]/g, '').replace(' ', '_') + '_' + safeName(r.employee) + '_' + safeName(r.site) + '.jpg',
+      parents: [folder], mimeType: 'image/jpeg',
+      description: JSON.stringify({ id: r.id, site: r.site, employee: r.employee, shot: r.shot, created: r.created, comment: r.comment || '' }),
+      appProperties: { genba: 'v1', rid: r.id }
+    };
+    var bd = 'genba' + r.id;
+    var body = new Blob(['--' + bd + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + bd + '\r\nContent-Type: image/jpeg\r\n\r\n', bytes(r.photo), '\r\n--' + bd + '--\r\n']);
+    return api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + tk, 'Content-Type': 'multipart/related; boundary=' + bd }, body: body
+    });
   }
   function sendOne(r) {
     return getToken().then(function (tk) {
-      return fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw: mime(r) })
-      }).then(function (res) {
-        if (res.ok) { store.set('google_ok', '1'); return; }
-        if (res.status === 401) { token = null; tokenExp = 0; store.del('gmail_token'); }
-        return res.json().catch(function () { return {}; }).then(function (j) {
-          throw new Error(res.status === 401 ? 'Google の許可が切れました。もう一度送ってください。' : '送信できませんでした（' + res.status + (j.error && j.error.message ? '：' + j.error.message : '') + '）。');
+      return folderId(tk).then(function (fid) {
+        return upload(tk, fid, r).catch(function (e) {
+          if (e.status !== 404) throw e;
+          store.del('drive_folder'); // フォルダが消されていたら作り直す
+          return folderId(tk).then(function (f2) { return upload(tk, f2, r); });
         });
-      }, function () { var e = new Error('電波がないため送れませんでした。'); e.offline = true; throw e; });
+      }).then(function () { store.set('drive_ok', '1'); });
     });
   }
 
-  // ---------- まだ送れていない記録 ----------
+  // ---------- まだ送れていない写真 ----------
   function showOutbox() { idb.all().then(function (l) { $('outbox').hidden = !l.length; $('outbox-count').textContent = l.length; }, function () {}); }
   var flushing = false;
   function flush(interactive) {
@@ -304,12 +306,12 @@
   }
   $('outbox-send').onclick = function () {
     var btn = this; btn.disabled = true;
-    flush(true).then(function (n) { show('保存していた記録を ' + n + ' 件送りました。', 'good'); },
-      function (e) { show((e.sent ? e.sent + ' 件送りました。' : '') + e.message + '（記録は保存したままです）', 'err'); })
+    flush(true).then(function (n) { show('保存していた写真を ' + n + ' 件送りました。', 'good'); },
+      function (e) { show((e.sent ? e.sent + ' 件送りました。' : '') + e.message + '（写真は携帯に保存したままです）', 'err'); })
       .then(function () { btn.disabled = false; });
   };
   window.addEventListener('online', function () {
-    flush(false).then(function (n) { if (n) show('電波が戻ったので、保存していた記録を ' + n + ' 件送りました。', 'good'); }, function () {});
+    flush(false).then(function (n) { if (n) show('電波が戻ったので、保存していた写真を ' + n + ' 件送りました。', 'good'); }, function () {});
   });
   showOutbox();
 
@@ -327,19 +329,19 @@
   }
   $('send').onclick = function () {
     if (recording) stopRec();
-    var name = store.get('employee'), to = store.get('report_to'), site = $('site').value.trim();
-    if (!name || !to) { openSettings(); show('先に撮影者（社員名）と送り先を登録してください。', 'err'); return; }
+    var name = store.get('employee'), site = $('site').value.trim();
+    if (!name) { openSettings(); show('先に撮影者（社員名）を登録してください。', 'err'); return; }
     if (!site) { show('現場名を入れてください。', 'err'); $('site').focus(); return; }
     if (!photo) { show('写真を撮ってください。', 'err'); return; }
     var comment = ta.value.trim();
     if (comment.length > 2000) { show('コメントが長すぎます（2000字まで）。', 'err'); return; }
-    var r = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), to: to, site: site, employee: name, shot: photo.shot, created: now(), comment: comment, photo: photo.data };
+    var r = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), site: site, employee: name, shot: photo.shot, created: now(), comment: comment, photo: photo.data };
     rememberSite(site);
     if (navigator.onLine === false) { saveForLater(r); return; }
     var btn = this; btn.disabled = true; btn.textContent = '送っています…';
     sendOne(r).then(function () {
       clearForm();
-      show('「' + site + '」の写真を送りました。続けて撮れます。', 'good');
+      show('「' + site + '」の写真を Google ドライブに保存しました。続けて撮れます。', 'good');
       flush(false).catch(function () {});
     }, function (e) {
       if (e.offline) saveForLater(r);
@@ -366,9 +368,9 @@
   $('install-btn').onclick = function () { if (!deferred) return; deferred.prompt(); deferred.userChoice.then(function () { deferred = null; $('install').hidden = true; }); };
   $('install-close').onclick = function () {
     store.set('install_closed', '1'); $('install').hidden = true;
-    if (!store.get('employee') || !store.get('report_to')) openSettings();
+    if (!store.get('employee')) openSettings();
   };
-  if (!store.get('employee') || !store.get('report_to')) openSettings();
+  if (!store.get('employee')) openSettings();
   else if (location.hash === '#install') showInstall(true);
   else if (ios || android) showInstall();
 

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1f5fa8">
+<title>現場写真 事務所（取り込み・報告書）</title>
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root { --main: #1f5fa8; --main-l: #e8f0fa; --ok: #1e7b3a; --bg: #f3f6fa; --text: #1f2933; --sub: #5b6875; --line: #c9d3de; --white: #fff; --err: #8a2a20; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Yu Gothic UI", "Meiryo", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; font-size: 16px; }
+  header { background: var(--main); color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 1.15rem; margin: 0; }
+  header .who { margin-left: auto; font-size: .9rem; }
+  main { max-width: 860px; margin: 0 auto; padding: 16px 20px 40px; }
+  .card { background: var(--white); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin-bottom: 14px; }
+  .card h2 { font-size: 1.05rem; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .n { width: 26px; height: 26px; border-radius: 50%; background: var(--main); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: .9rem; }
+  .hint { font-size: .88rem; color: var(--sub); margin: 4px 0 0; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 8px; padding: 9px 18px; background: var(--main); color: #fff; cursor: pointer; }
+  button.ok { background: var(--ok); }
+  button.sub { background: var(--white); color: var(--main); border: 1px solid var(--main); }
+  button:disabled { opacity: .5; cursor: default; }
+  select, input[type=date] { font: inherit; padding: 6px 8px; border: 1px solid #b7c3cf; border-radius: 6px; background: #fff; }
+  .path { font-weight: 700; }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: .92rem; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+  th { background: var(--main-l); }
+  td.num { text-align: right; }
+  .log { margin-top: 10px; background: #f6f8fa; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: .88rem; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+  .msg { margin-top: 8px; padding: 8px 12px; border-radius: 6px; font-size: .95rem; }
+  .msg.err { background: #fdecea; border: 1px solid #e6a39b; color: var(--err); }
+  .msg.good { background: #e8f6ec; border: 1px solid #8fcea2; color: #1c5a30; }
+  .msg.info { background: #fff6e0; border: 1px solid #f0c36d; }
+  label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: .95rem; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>現場写真　事務所（取り込み・報告書）</h1>
+  <span class="who" id="who">未ログイン</span>
+</header>
+<main>
+  <div id="unsupported" class="msg err" hidden>このブラウザではフォルダに保存できません。パソコンの <b>Edge</b> か <b>Chrome</b> で開いてください。</div>
+
+  <section class="card">
+    <h2><span class="n">1</span>Google にログイン</h2>
+    <p class="hint">携帯で写真を送ったときと同じ Google アカウントでログインしてください。</p>
+    <div class="row"><button id="login" type="button">Google でログイン</button></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">2</span>保存先のフォルダ</h2>
+    <p class="hint">会社のファイルサーバー（ネットワークドライブ）や個人のフォルダを選びます。この中に、現場ごとのフォルダができます。一度選ぶと、次からは覚えています。</p>
+    <div class="row">
+      <button id="pick" type="button" class="sub">フォルダを選ぶ</button>
+      <span>保存先：<span class="path" id="dir">（まだ選んでいません）</span></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">3</span>ドライブから取り込む</h2>
+    <p class="hint">携帯から送った写真を、Google ドライブから保存先のフォルダへ移します。</p>
+    <div class="row">
+      <button id="check" type="button" class="sub">ドライブの写真を確認</button>
+      <button id="import" type="button" class="ok">取り込む</button>
+      <label class="chk"><input type="checkbox" id="del" checked>取り込んだ写真はドライブから消す（ゴミ箱へ移し、30日後に自動で消えます）</label>
+    </div>
+    <div id="drive-list"></div>
+    <div id="import-log" class="log" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">4</span>報告書を作る</h2>
+    <p class="hint">保存先のフォルダにある現場から作ります。Excel は現場のフォルダの「報告書」に保存します。PDF は印刷の画面で「PDF として保存」を選んでください。</p>
+    <div class="row">
+      <label>現場 <select id="site"><option value="">（保存先を選ぶと出ます）</option></select></label>
+      <button id="reload" type="button" class="sub">一覧を読み直す</button>
+    </div>
+    <div class="row">
+      <label>期間 <input type="date" id="from"></label> 〜 <input type="date" id="to">
+      <span class="hint" style="margin:0">（空なら全期間）</span>
+    </div>
+    <div class="row">
+      <button id="excel" type="button" class="ok">Excel を作る</button>
+      <button id="pdf" type="button" class="ok">PDF を作る（印刷画面）</button>
+    </div>
+  </section>
+
+  <div id="msg" class="msg" hidden></div>
+</main>
+<script src="config.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="office.js"></script>
+</body>
+</html>
