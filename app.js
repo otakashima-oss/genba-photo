@@ -177,6 +177,8 @@
       card.querySelector('img').src = 'data:image/jpeg;base64,' + p.data;
       var ta = card.querySelector('textarea'); ta.value = p.comment || '';
       ['input', 'change', 'compositionend', 'blur'].forEach(function (ev) { ta.addEventListener(ev, function () { p.comment = ta.value; saveDraftLater(); }); });
+      // カーソルの位置を覚える（「話す」で、ここに文字を入れる）
+      ['click', 'keyup', 'select', 'input', 'blur', 'touchend'].forEach(function (ev) { ta.addEventListener(ev, function () { if (recKey === p.key) return; p.caret = ta.selectionStart; p.caretEnd = ta.selectionEnd; }); });
       var mic = card.querySelector('.mic');
       if (mic) mic.onclick = function () { if (recKey === p.key) stopRec(); else startRec(p); };
       if (recKey === p.key) setTimeout(function () { micUI(p.key, true); }, 0); // 描き直しても「止める」の表示を保つ
@@ -196,14 +198,15 @@
   // カメラから戻ったときに画面が読み直されても、撮った写真とコメントは残す
   idb.getDraft().then(function (l) { if (Array.isArray(l) && l.length && !photos.length) { photos = l; render(); } }, function () {});
 
-  // ---------- コメントの音声入力（押した写真のコメント欄に入る） ----------
-  // iPhone の音声認識は、作り直しをくり返すと動かなくなるので、聞き取りの仕組みは1つだけ作って使い回す。
+  // ---------- コメントの音声入力（押した写真のコメント欄の、カーソルの位置に入る） ----------
+  // iPhone の音声認識は、作り直しをくり返すと動かなくなるので、ふだんは1つを使い回す。
+  // ただし、止めたあとに「止まった」合図が来ないことがあるので、そのときは作り直して始める。
   // ・別の写真の「話す」：聞き取りは止めずに、文字の入り先だけ切り替える
+  // ・入る場所：その欄でカーソルを置いた位置（置いていなければ、最後に行を変えて足す）
   // ・聞き取った文字は、その回の確定した文字を毎回はじめから組み立て直す（重なって届いても二重にならない）
-  // ・一覧を描き直しても続くように、写真の欄は key で毎回探す
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   var R = null, listening = false, running = false, target = null, recKey = null;
-  var tBase = '', tOffset = 0, sessFinal = '', startAt = 0, tick = null;
+  var tBase = '', tAfter = '', tOffset = 0, sessFinal = '', startAt = 0, tick = null, stoppedAt = 0, watch = null;
   if (!SR) $('no-speech').hidden = false;
   function cardOf(key) { return key ? $('list').querySelector('.card[data-key="' + key + '"]') : null; }
   function micUI(key, on) {
@@ -212,55 +215,72 @@
     var mic = card.querySelector('.mic'); if (mic) { mic.textContent = on ? '止める' : '話す'; mic.classList.toggle('on', on); }
     if (!on) card.querySelector('.interim').textContent = '';
   }
+  // 聞き取った文字を、入る場所に入れて欄に出す
+  function put(add) {
+    if (!target) return;
+    target.comment = tBase + add + tAfter;
+    target.caret = (tBase + add).length; // 次に「話す」を押したときは、ここから続ける
+    saveDraftLater();
+    var card = cardOf(target.key);
+    if (card) { var ta = card.querySelector('textarea'); ta.value = target.comment; }
+  }
   function recognizer() {
     if (R) return R;
-    R = new SR();
-    R.lang = 'ja-JP'; R.continuous = true; R.interimResults = true;
-    R.onstart = function () { running = true; sessFinal = ''; tOffset = 0; };
-    R.onresult = function (e) {
-      // この回の確定した文字（はじめから全部）と、まだ確定していない文字
+    var r = R = new SR();
+    r.lang = 'ja-JP'; r.continuous = true; r.interimResults = true;
+    r.onstart = function () { if (R !== r) return; running = true; clearTimeout(watch); sessFinal = ''; tOffset = 0; };
+    r.onresult = function (e) {
+      if (R !== r) return;
       var fin = '', mid = '';
       for (var i = 0; i < e.results.length; i++) { if (e.results[i].isFinal) fin += e.results[i][0].transcript; else mid += e.results[i][0].transcript; }
       sessFinal = fin;
       if (!target) return;
-      var card = cardOf(target.key);
       var add = fin.slice(tOffset);
-      if (add) { target.comment = tBase + add; saveDraftLater(); if (card) card.querySelector('textarea').value = target.comment; }
-      if (card) card.querySelector('.interim').textContent = mid;
+      if (add) put(add);
+      var card = cardOf(target.key); if (card) card.querySelector('.interim').textContent = mid;
     };
-    R.onspeechstart = hideMsg;
-    R.onerror = function (e) {
-      if (e.error === 'no-speech' || e.error === 'aborted') return;
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        show('マイクが許可されていません。「設定」→「Safari」→「マイク」で許可するか、キーボードのマイクで話してください。', 'err');
-      } else {
-        show('「話す」がうまく動きません（' + e.error + '）。もう一度押すか、キーボードのマイクで話してください。', 'err');
-      }
+    r.onspeechstart = hideMsg;
+    r.onerror = function (e) {
+      if (R !== r || e.error === 'no-speech' || e.error === 'aborted') return;
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') show('マイクが許可されていません。「設定」→「Safari」→「マイク」で許可するか、キーボードのマイクで話してください。', 'err');
+      else show('「話す」がうまく動きません（' + e.error + '）。もう一度押すか、キーボードのマイクで話してください。', 'err');
       stopRec();
     };
-    R.onend = function () {
+    r.onend = function () {
+      if (R !== r) return;
       running = false;
-      // 次の回は、ここまでに入った文の後ろに続ける
-      if (target && sessFinal.slice(tOffset)) tBase = target.comment || '';
+      var add = sessFinal.slice(tOffset);
+      if (target && add) tBase = tBase + add; // 次の回は、ここまでに入った文の後ろに続ける
       sessFinal = ''; tOffset = 0;
-      if (listening) setTimeout(tryStart, 250); // 途中で切れたら続ける（話す間があくと iPhone は止めることがある）
+      if (listening) setTimeout(tryStart, 250); // 話す間があくと iPhone は止めることがある。続ける
     };
-    return R;
+    return r;
   }
-  function tryStart() {
-    if (!listening || running) return;
-    try { recognizer().start(); } catch (e) {
-      // まだ前の聞き取りが終わっていない：少し待ってやり直す
-      setTimeout(function () { if (listening && !running) { try { recognizer().start(); } catch (e2) { show('音声認識を始められませんでした。キーボードのマイクで話してください。', 'err'); stopRec(); } } }, 600);
-    }
+  // 聞き取りの仕組みを捨てて作り直す（止まった合図が来ない、始まらない、とき）
+  function reset() { var r = R; R = null; running = false; if (r) { try { r.abort(); } catch (e) {} } }
+  function tryStart(retry) {
+    if (!listening) return;
+    // 止めたのに「止まった」合図が来ないまま：作り直す
+    if (running && stoppedAt && Date.now() - stoppedAt > 700) reset();
+    if (running) return;
+    try { recognizer().start(); } catch (e) { reset(); try { recognizer().start(); } catch (e2) { show('音声認識を始められませんでした。キーボードのマイクで話してください。', 'err'); stopRec(); return; } }
+    stoppedAt = 0;
+    // 2秒たっても始まらなければ、作り直してもう一度だけ
+    clearTimeout(watch);
+    watch = setTimeout(function () { if (listening && !running) { reset(); if (!retry) tryStart(true); else { show('音声認識が始まりませんでした。もう一度「話す」を押すか、キーボードのマイクで話してください。', 'err'); stopRec(); } } }, 2000);
   }
   // 写真 p のコメントに入れ始める
   function startRec(p) {
     if (target && target !== p) micUI(target.key, false);
     target = p; recKey = p.key;
-    var cur = (p.comment || '').replace(/\s*$/, '');
-    tBase = cur ? cur + '\n' : '';   // 前からある文の後ろに、行を変えて足す
-    tOffset = sessFinal.length;      // ここまでに聞き取った文字は、前の写真の分
+    var text = p.comment || '', c = p.caret;
+    if (typeof c === 'number' && c >= 0 && c <= text.length) {
+      tBase = text.slice(0, c); tAfter = text.slice(p.caretEnd != null && p.caretEnd >= c && p.caretEnd <= text.length ? p.caretEnd : c);
+    } else {
+      var cur = text.replace(/\s*$/, ''); tBase = cur ? cur + '\n' : ''; tAfter = ''; // カーソルを置いていなければ、最後に行を変えて足す
+    }
+    p.caretEnd = null;
+    tOffset = sessFinal.length; // ここまでに聞き取った文字は、前の写真の分
     listening = true;
     micUI(p.key, true);
     startAt = Date.now(); clearInterval(tick);
@@ -270,8 +290,8 @@
   }
   function stopRec() {
     if (target) micUI(target.key, false);
-    listening = false; target = null; recKey = null; clearInterval(tick);
-    if (R && running) { try { R.stop(); } catch (e) {} }
+    listening = false; target = null; recKey = null; clearInterval(tick); clearTimeout(watch);
+    if (R && running) { stoppedAt = Date.now(); try { R.stop(); } catch (e) { reset(); } }
   }
 
   // ---------- Google ログイン（Google ドライブの許可：このアプリが作ったファイルだけ） ----------
