@@ -80,10 +80,19 @@
   function showSites() {
     $('site-list').innerHTML = '';
     sites().forEach(function (s) { var o = document.createElement('option'); o.value = s; $('site-list').appendChild(o); });
+    // 新しく使った順に8件までボタンで並べる（押すと現場名に入る）
+    var box = $('recent'); box.innerHTML = '';
+    sites().slice(0, 8).forEach(function (s) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = s;
+      if (s === $('site').value.trim()) b.className = 'on';
+      b.onclick = function () { $('site').value = s; store.set('site', s); showSites(); };
+      box.appendChild(b);
+    });
+    box.hidden = !sites().length;
   }
   function rememberSite(s) { store.set('sites', JSON.stringify([s].concat(sites().filter(function (x) { return x !== s; })).slice(0, 30))); showSites(); }
   $('site').value = store.get('site');
-  $('site').addEventListener('input', function () { store.set('site', $('site').value); });
+  $('site').addEventListener('input', function () { store.set('site', $('site').value); showSites(); });
   showSites();
 
   // ---------- 写真 ----------
