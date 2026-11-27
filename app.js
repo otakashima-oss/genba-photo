@@ -1,8 +1,8 @@
 /* 現場写真：画面の動き
    1. 現場名を入れる（前に使った現場名は候補に出る）
-   2. 写真を撮る（またはアルバムから選ぶ）→ 長い辺 1600px の JPEG に縮める。撮影日時は写真の情報（EXIF）から読む
-   3. 「話す」でコメントを文字にする（使えない機種はキーボードのマイク）
-   4. 「この写真を送る」：写真を本人の Google ドライブの「現場写真（アプリ）」フォルダに保存する（Drive API、drive.file）
+   2. 写真を撮る（アルバムからは複数枚選べる）→ 一覧に足す。長い辺 1600px の JPEG に縮める。撮影日時は写真の情報（EXIF）から読む
+   3. 写真ごとに「話す」でコメントを文字にする（使えない機種はキーボードのマイク）
+   4. 「○枚をまとめて送る」：1枚ずつ、写真を本人の Google ドライブの「現場写真（アプリ）」フォルダに保存する（Drive API、drive.file）
       現場名・撮影者・撮影日時・コメントは、ファイルの説明（description）に JSON で入れる
       電波がないときは携帯（IndexedDB）に保存し、電波が戻ったら送る
    事務所の画面（office.html）が、ドライブから指定のフォルダに取り込み、報告書を作る。
@@ -52,8 +52,8 @@
     all: function () { return tx('outbox', 'readonly', function (s) { return s.getAll(); }).then(function (l) { return (l || []).sort(function (a, b) { return a.id < b.id ? -1 : 1; }); }); },
     put: function (r) { return tx('outbox', 'readwrite', function (s) { s.put(r); }); },
     del: function (id) { return tx('outbox', 'readwrite', function (s) { s.delete(id); }); },
-    getDraft: function () { return tx('draft', 'readonly', function (s) { return s.get('photo'); }); },
-    setDraft: function (v) { return tx('draft', 'readwrite', function (s) { if (v) s.put(v, 'photo'); else s.delete('photo'); }); }
+    getDraft: function () { return tx('draft', 'readonly', function (s) { return s.get('photos'); }); },
+    setDraft: function (v) { return tx('draft', 'readwrite', function (s) { s.delete('photo'); if (v) s.put(v, 'photos'); else s.delete('photos'); }); }
   };
 
   // ---------- 撮影者 ----------
@@ -95,11 +95,13 @@
   $('site').addEventListener('input', function () { store.set('site', $('site').value); showSites(); });
   showSites();
 
-  // ---------- 写真 ----------
-  var photo = null; // { data: base64(JPEG), shot: 'YYYY-MM-DD HH:MM', w, h }
+  // ---------- 撮った写真の一覧（何枚でも。1枚ごとにコメント） ----------
+  // photos：[{ key, data: base64(JPEG), shot: 'YYYY-MM-DD HH:MM', comment }]。携帯の中（IndexedDB）にも残す
+  var photos = [];
   function pad(n) { return ('0' + n).slice(-2); }
   function fmt(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
   function now() { return fmt(new Date()); }
+  function newKey() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
   // EXIF の撮影日時（DateTimeOriginal）を読む。なければ null
   function exifDate(buf) {
@@ -132,7 +134,6 @@
     } catch (e) {}
     return null;
   }
-
   function loadImage(file) {
     return new Promise(function (ok, ng) {
       var url = URL.createObjectURL(file), img = new Image();
@@ -141,53 +142,77 @@
       img.src = url;
     });
   }
-
-  function pick(file, fromCamera) {
-    if (!file) return;
-    show('写真を準備しています…', 'info');
+  // 1枚を縮めて一覧に足す
+  function addFile(file, fromCamera) {
     var shotP = file.arrayBuffer ? file.arrayBuffer().then(exifDate, function () { return null; }) : Promise.resolve(null);
-    Promise.all([loadImage(file), shotP]).then(function (r) {
+    return Promise.all([loadImage(file), shotP]).then(function (r) {
       var img = r[0], w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, MAX_PX / Math.max(w, h));
       var c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); // 携帯のブラウザは写真の向きを直して描く
       var shot = r[1] || (fromCamera ? now() : (file.lastModified ? fmt(new Date(file.lastModified)) : now()));
-      setPhoto({ data: c.toDataURL('image/jpeg', QUALITY).split(',')[1], shot: shot, w: c.width, h: c.height });
-      idb.setDraft(photo).catch(function () {});
-      hideMsg();
-    }, function (e) { show(e.message, 'err'); });
+      photos.push({ key: newKey(), data: c.toDataURL('image/jpeg', QUALITY).split(',')[1], shot: shot, comment: '' });
+    });
   }
-  function setPhoto(p) {
-    photo = p;
-    $('preview').hidden = !p; $('photo-empty').hidden = !!p; $('photo-clear').hidden = !p;
-    $('preview').src = p ? 'data:image/jpeg;base64,' + p.data : '';
-    $('shot-at').textContent = p ? '撮影日時：' + p.shot + '　撮影者：' + (store.get('employee') || '（未登録）') : '';
+  function addFiles(files, fromCamera) {
+    files = Array.prototype.slice.call(files || []);
+    if (!files.length) return;
+    show(files.length > 1 ? files.length + '枚の写真を準備しています…' : '写真を準備しています…', 'info');
+    files.reduce(function (p, f) { return p.then(function () { return addFile(f, fromCamera).catch(function () {}); }); }, Promise.resolve())
+      .then(function () { saveDraft(); render(); hideMsg(); var l = $('list'); l.scrollTop = l.scrollHeight; });
   }
-  $('camera').onchange = function () { pick(this.files[0], true); this.value = ''; };
-  $('album').onchange = function () { pick(this.files[0], false); this.value = ''; };
-  $('photo-clear').onclick = function () { setPhoto(null); idb.setDraft(null).catch(function () {}); };
-  // カメラから戻ったときに画面が読み直されても、撮った写真は残す
-  idb.getDraft().then(function (p) { if (p && !photo) setPhoto(p); }, function () {});
+  function saveDraft() { idb.setDraft(photos.length ? photos : null).catch(function () {}); }
+  var draftTimer = null;
+  function saveDraftLater() { clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); }
 
-  // ---------- コメント（音声入力） ----------
-  var ta = $('comment');
-  ta.value = store.get('draft_comment');
-  function keep() { store.set('draft_comment', ta.value); }
-  ['input', 'change', 'keyup', 'compositionend', 'blur'].forEach(function (ev) { ta.addEventListener(ev, keep); });
+  function render() {
+    var list = $('list');
+    Array.prototype.slice.call(list.querySelectorAll('.card')).forEach(function (c) { c.remove(); });
+    $('empty').hidden = photos.length > 0;
+    photos.forEach(function (p, i) {
+      var card = document.createElement('div'); card.className = 'card'; card.dataset.key = p.key;
+      card.innerHTML = '<img alt=""><div class="body"><div class="meta"><b>' + (i + 1) + '枚目</b>　撮影日時：' + p.shot + '</div>' +
+        '<div class="cm"><textarea placeholder="この写真のコメント（「話す」で声で入れられます）"></textarea>' +
+        (SR ? '<button class="mic" type="button">話す</button>' : '') + '</div><div class="interim"></div></div>' +
+        '<button class="del" type="button" aria-label="この写真を外す">×</button>';
+      card.querySelector('img').src = 'data:image/jpeg;base64,' + p.data;
+      var ta = card.querySelector('textarea'); ta.value = p.comment || '';
+      ['input', 'change', 'compositionend', 'blur'].forEach(function (ev) { ta.addEventListener(ev, function () { p.comment = ta.value; saveDraftLater(); }); });
+      var mic = card.querySelector('.mic');
+      if (mic) mic.onclick = function () { if (recKey === p.key) stopRec(); else startRec(p, card); };
+      card.querySelector('.del').onclick = function () {
+        if ((p.comment || '').trim() && !confirm(i + 1 + '枚目の写真とコメントを外しますか？')) return;
+        if (recKey === p.key) stopRec();
+        photos = photos.filter(function (x) { return x.key !== p.key; }); saveDraft(); render();
+      };
+      list.appendChild(card);
+    });
+    var n = photos.length, btn = $('send');
+    btn.disabled = !n || sending;
+    if (!sending) btn.textContent = n ? n + '枚をまとめて送る' : '写真を撮ってください';
+  }
+  $('camera').onchange = function () { addFiles(this.files, true); this.value = ''; };
+  $('album').onchange = function () { addFiles(this.files, false); this.value = ''; };
+  // カメラから戻ったときに画面が読み直されても、撮った写真とコメントは残す
+  idb.getDraft().then(function (l) { if (Array.isArray(l) && l.length && !photos.length) { photos = l; render(); } }, function () {});
 
+  // ---------- コメントの音声入力（押した写真のコメント欄に入る） ----------
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var rec = null, recording = false, startAt = 0, tick = null, base = '';
-  if (!SR) { $('rec').hidden = true; $('no-speech').hidden = false; }
-  function startRec() {
+  var rec = null, recKey = null, recCard = null, recPhoto = null, startAt = 0, tick = null, base = '';
+  if (!SR) $('no-speech').hidden = false;
+  function startRec(p, card) {
+    if (recKey) stopRec();
     rec = new SR();
     rec.lang = 'ja-JP'; rec.continuous = true; rec.interimResults = true;
+    recKey = p.key; recCard = card; recPhoto = p;
+    var ta = card.querySelector('textarea');
     base = ta.value ? ta.value.replace(/\s*$/, '') + '\n' : '';
     rec.onresult = function (e) {
       var fin = '', mid = '';
       for (var i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) fin += e.results[i][0].transcript; else mid += e.results[i][0].transcript;
       }
-      if (fin) { base += fin; ta.value = base; keep(); }
-      $('interim').textContent = mid;
+      if (fin) { base += fin; ta.value = base; p.comment = base; saveDraftLater(); }
+      card.querySelector('.interim').textContent = mid;
     };
     rec.onspeechstart = hideMsg;
     rec.onerror = function (e) {
@@ -195,20 +220,19 @@
       show('「話す」が使えません（' + e.error + '）。コメント欄をタップして、キーボードのマイクで話してください。', 'err');
       stopRec();
     };
-    rec.onend = function () { if (recording) { try { rec.start(); } catch (e) { stopRec(); } } };
-    try { rec.start(); } catch (e) { show('音声認識を始められませんでした。キーボードのマイクで話してください。', 'err'); return; }
-    recording = true; startAt = Date.now();
+    rec.onend = function () { if (recKey === p.key) { try { rec.start(); } catch (e) { stopRec(); } } };
+    try { rec.start(); } catch (e) { recKey = null; show('音声認識を始められませんでした。キーボードのマイクで話してください。', 'err'); return; }
+    startAt = Date.now();
     tick = setInterval(function () { if (Date.now() - startAt > MAX_SEC * 1000) stopRec(); }, 500);
-    $('rec').textContent = '止める'; $('rec').classList.add('on'); $('rec').setAttribute('aria-pressed', 'true');
-    show('聞き取り中です。話してください。', 'info');
+    card.classList.add('rec-on'); var mic = card.querySelector('.mic'); mic.textContent = '止める'; mic.classList.add('on');
+    show('聞き取り中です。この写真のコメントを話してください。', 'info');
   }
   function stopRec() {
-    recording = false; clearInterval(tick);
+    var card = recCard;
+    recKey = null; recCard = null; recPhoto = null; clearInterval(tick);
     if (rec) { try { rec.stop(); } catch (e) {} }
-    $('rec').textContent = '話す'; $('rec').classList.remove('on'); $('rec').setAttribute('aria-pressed', 'false');
-    $('interim').textContent = '';
+    if (card) { card.classList.remove('rec-on'); var mic = card.querySelector('.mic'); if (mic) { mic.textContent = '話す'; mic.classList.remove('on'); } card.querySelector('.interim').textContent = ''; }
   }
-  $('rec').onclick = function () { if (recording) stopRec(); else startRec(); };
 
   // ---------- Google ログイン（Google ドライブの許可：このアプリが作ったファイルだけ） ----------
   var token = null, tokenExp = 0, tokenClient = null;
@@ -315,47 +339,67 @@
   }
   $('outbox-send').onclick = function () {
     var btn = this; btn.disabled = true;
-    flush(true).then(function (n) { show('保存していた写真を ' + n + ' 件送りました。', 'good'); },
-      function (e) { show((e.sent ? e.sent + ' 件送りました。' : '') + e.message + '（写真は携帯に保存したままです）', 'err'); })
+    flush(true).then(function (n) { show('保存していた写真を ' + n + ' 枚送りました。', 'good'); },
+      function (e) { show((e.sent ? e.sent + ' 枚送りました。' : '') + e.message + '（写真は携帯に保存したままです）', 'err'); })
       .then(function () { btn.disabled = false; });
   };
   window.addEventListener('online', function () {
-    flush(false).then(function (n) { if (n) show('電波が戻ったので、保存していた写真を ' + n + ' 件送りました。', 'good'); }, function () {});
+    flush(false).then(function (n) { if (n) show('電波が戻ったので、保存していた写真を ' + n + ' 枚送りました。', 'good'); }, function () {});
   });
   showOutbox();
 
-  // ---------- 送る ----------
-  function clearForm() {
-    setPhoto(null); idb.setDraft(null).catch(function () {});
-    ta.value = ''; store.del('draft_comment');
-    // 現場名は残す（同じ現場で続けて撮るため）
+  // ---------- まとめて送る ----------
+  var sending = false;
+  function toRecord(p, site, name) {
+    return { id: p.key, site: site, employee: name, shot: p.shot, created: now(), comment: (p.comment || '').trim().slice(0, 2000), photo: p.data };
   }
-  function saveForLater(r) {
-    return idb.put(r).then(function () {
-      clearForm(); showOutbox();
-      show('写真を携帯に保存しました。電波が戻ったら送ります（送れないときは「今すぐ送る」）。', 'info');
-    }, function () { show('携帯に保存できませんでした。電波のある所でもう一度送ってください。', 'err'); });
+  // 送れなかった分は携帯に保存（電波が戻ったら送る）
+  function keepForLater(list) {
+    return list.reduce(function (pr, r) { return pr.then(function () { return idb.put(r); }); }, Promise.resolve()).then(function () {
+      var keys = list.map(function (r) { return r.id; });
+      photos = photos.filter(function (p) { return keys.indexOf(p.key) < 0; }); saveDraft(); render(); showOutbox();
+    });
   }
   $('send').onclick = function () {
-    if (recording) stopRec();
+    if (recKey) stopRec();
     var name = store.get('employee'), site = $('site').value.trim();
     if (!name) { openSettings(); show('先に撮影者（社員名）を登録してください。', 'err'); return; }
     if (!site) { show('現場名を入れてください。', 'err'); $('site').focus(); return; }
-    if (!photo) { show('写真を撮ってください。', 'err'); return; }
-    var comment = ta.value.trim();
-    if (comment.length > 2000) { show('コメントが長すぎます（2000字まで）。', 'err'); return; }
-    var r = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), site: site, employee: name, shot: photo.shot, created: now(), comment: comment, photo: photo.data };
+    if (!photos.length) { show('写真を撮ってください。', 'err'); return; }
+    var empty = photos.filter(function (p) { return !(p.comment || '').trim(); }).length;
+    if (empty && !confirm('コメントのない写真が ' + empty + ' 枚あります。このまま送りますか？')) return;
     rememberSite(site);
-    if (navigator.onLine === false) { saveForLater(r); return; }
-    var btn = this; btn.disabled = true; btn.textContent = '送っています…';
-    sendOne(r).then(function () {
-      clearForm();
-      show('「' + site + '」の写真を Google ドライブに保存しました。続けて撮れます。', 'good');
+    var records = photos.map(function (p) { return toRecord(p, site, name); });
+    if (navigator.onLine === false) {
+      keepForLater(records).then(function () { show(records.length + '枚を携帯に保存しました。電波が戻ったら送ります（送れないときは「今すぐ送る」）。', 'info'); },
+        function () { show('携帯に保存できませんでした。電波のある所でもう一度送ってください。', 'err'); });
+      return;
+    }
+    var btn = $('send'), total = records.length, done = 0;
+    sending = true; btn.disabled = true;
+    function next() {
+      if (!records.length) return Promise.resolve();
+      var r = records[0];
+      btn.textContent = '送っています…（' + (done + 1) + ' / ' + total + '枚）';
+      return sendOne(r).then(function () {
+        done++; records.shift();
+        photos = photos.filter(function (p) { return p.key !== r.id; }); saveDraft(); render();
+        return next();
+      });
+    }
+    next().then(function () {
+      sending = false; render();
+      show('「' + site + '」の写真 ' + total + ' 枚を Google ドライブに保存しました。', 'good');
       flush(false).catch(function () {});
     }, function (e) {
-      if (e.offline) saveForLater(r);
-      else show(e.message + '（写真とコメントは残っています）', 'err');
-    }).then(function () { btn.disabled = false; btn.textContent = 'この写真を送る'; });
+      sending = false;
+      if (e.offline) {
+        keepForLater(records).then(function () { show((done ? done + '枚は保存しました。' : '') + '残りの ' + records.length + ' 枚は電波がないため携帯に保存しました。電波が戻ったら送ります。', 'info'); });
+      } else {
+        render();
+        show((done ? done + '枚は保存しました。' : '') + e.message + '（残りの写真とコメントは画面に残っています）', 'err');
+      }
+    });
   };
 
   // ---------- ホーム画面に追加 ----------

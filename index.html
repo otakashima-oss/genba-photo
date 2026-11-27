@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="現場写真">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>
-  /* 画面の高さに収める。写真の見本とコメント欄が残りの高さを分け合う */
+  /* 画面の高さに収める。撮った写真の一覧だけがスクロールする */
   :root { --main: #1f5fa8; --main-dark: #174a84; --on-main: #fff; --rec: #d93025; --ok: #1e7b3a; --bg: #f3f6fa; --text: #1f2933; --sub: #5b6875; --line: #c9d3de; --white: #fff; }
   * { box-sizing: border-box; }
   html { font-size: 17.5px; }
@@ -34,26 +34,29 @@
   .recent { flex: none; display: flex; gap: 6px; overflow-x: auto; margin-top: -2px; padding-bottom: 2px; }
   .recent button { flex: none; border: 1px solid var(--main); background: var(--white); color: var(--main); border-radius: 999px; padding: 3px 12px; font: inherit; font-size: .85rem; white-space: nowrap; }
   .recent button.on { background: var(--main); color: var(--on-main); }
-  .photo { flex: 1.2; min-height: 120px; position: relative; border: 2px dashed var(--line); border-radius: 10px; background: var(--white); display: flex; align-items: center; justify-content: center; overflow: hidden; }
-  .photo img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .photo .empty { color: var(--sub); font-size: .9rem; text-align: center; padding: 8px; }
-  .photo .clear { position: absolute; top: 6px; right: 6px; border: 0; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; font: inherit; font-size: .8rem; padding: 3px 10px; }
+  /* 撮った写真の一覧（1枚ごとにコメント）。この部分だけスクロールする */
+  .list { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 8px; padding-bottom: 4px; }
+  .empty { margin: auto; color: var(--sub); font-size: .9rem; text-align: center; padding: 16px; border: 2px dashed var(--line); border-radius: 10px; width: 100%; }
+  .card { flex: none; display: flex; gap: 8px; background: var(--white); border: 1px solid var(--line); border-radius: 10px; padding: 8px; position: relative; }
+  .card.rec-on { border-color: var(--rec); box-shadow: 0 0 0 2px rgba(217,48,37,.25); }
+  .card img { flex: none; width: 96px; height: 96px; object-fit: cover; border-radius: 6px; background: #eef2f6; }
+  .card .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .card .meta { font-size: .75rem; color: var(--sub); padding-right: 26px; }
+  .card .meta b { color: var(--text); }
+  .card .cm { display: flex; gap: 6px; align-items: stretch; }
+  .card textarea { flex: 1; height: 4.2em; font-size: .95rem; padding: 6px 8px; }
+  .card .mic { flex: none; width: 54px; border: 0; border-radius: 8px; background: var(--rec); color: #fff; font: inherit; font-weight: 700; font-size: .85rem; }
+  .card .mic.on { background: var(--text); animation: pulse 1.4s infinite; }
+  .card .del { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; font-size: .9rem; line-height: 26px; padding: 0; }
+  .card .interim { font-size: .8rem; color: var(--sub); min-height: 0; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(217,48,37,.5); } 100% { box-shadow: 0 0 0 10px rgba(217,48,37,0); } }
   .photo-btns { flex: none; display: flex; gap: 8px; }
   .photo-btns label { flex: 1; text-align: center; padding: 10px 6px; border-radius: 8px; font-weight: 700; font-size: .95rem; background: var(--main); color: var(--on-main); }
   .photo-btns label.sub { background: var(--white); color: var(--main); border: 1px solid var(--main); }
   .photo-btns input { display: none; }
-  .shot-at { flex: none; font-size: .8rem; color: var(--sub); min-height: 1.2em; margin: -4px 0 0; }
-
-  .rec-row { flex: none; display: flex; align-items: center; gap: 10px; }
-  .rec-btn { flex: none; width: 64px; height: 64px; border-radius: 50%; border: 0; background: var(--rec); color: var(--white); font: inherit; font-weight: 700; font-size: .95rem; box-shadow: 0 3px 10px rgba(0,0,0,.2); }
-  .rec-btn.on { background: var(--text); animation: pulse 1.4s infinite; }
-  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(217,48,37,.5); } 100% { box-shadow: 0 0 0 14px rgba(217,48,37,0); } }
-  .rec-row textarea { flex: 1; }
   .hint { font-size: .82rem; color: var(--sub); margin: 0; line-height: 1.45; }
-  .interim { flex: none; color: var(--sub); font-size: .85rem; min-height: 1.2em; max-height: 2.6em; overflow: hidden; margin-top: -4px; }
-
   input, textarea { width: 100%; font: inherit; font-size: 1rem; padding: 8px 10px; border: 1px solid #b7c3cf; border-radius: 8px; background: var(--white); color: var(--text); }
-  textarea { height: 5.2em; resize: none; }
+  textarea { resize: none; }
 
   footer { flex: none; padding: 8px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .outbox { display: flex; align-items: center; gap: 8px; font-size: .85rem; background: #fff6e0; border: 1px solid #f0c36d; border-radius: 8px; padding: 4px 8px; margin-bottom: 6px; }
@@ -92,31 +95,22 @@
     </div>
     <div class="recent" id="recent" hidden></div>
 
-    <div class="photo" id="photo">
-      <div class="empty" id="photo-empty">下のボタンで写真を撮ってください</div>
-      <img id="preview" alt="撮った写真" hidden>
-      <button id="photo-clear" class="clear" type="button" hidden>撮り直す</button>
-    </div>
-    <p class="shot-at" id="shot-at"></p>
-    <div class="photo-btns">
-      <label>📷 写真を撮る<input id="camera" type="file" accept="image/*" capture="environment"></label>
-      <label class="sub">🖼 アルバムから<input id="album" type="file" accept="image/*"></label>
-    </div>
-
-    <div class="rec-row">
-      <button id="rec" class="rec-btn" type="button" aria-pressed="false">話す</button>
-      <textarea id="comment" placeholder="コメント（「話す」を押して話すと文字になります。直せます）"></textarea>
+    <div class="list" id="list">
+      <div class="empty" id="empty">下のボタンで写真を撮ってください。<br>何枚でも続けて撮れます。写真ごとにコメントを入れて、まとめて送ります。</div>
     </div>
     <p class="hint" id="no-speech" hidden>「話す」が使えない機種です。コメント欄をタップし、キーボードの<b>マイク</b>で話してください。</p>
-    <div class="interim" id="interim" aria-live="polite"></div>
+    <div class="photo-btns">
+      <label>📷 写真を撮る<input id="camera" type="file" accept="image/*" capture="environment"></label>
+      <label class="sub">🖼 アルバムから<input id="album" type="file" accept="image/*" multiple></label>
+    </div>
   </main>
 
   <footer>
     <div id="outbox" class="outbox" hidden>
-      <span>まだ送れていない写真：<b id="outbox-count">0</b>件</span>
+      <span>まだ送れていない写真：<b id="outbox-count">0</b>枚</span>
       <button id="outbox-send" class="btn sub" type="button">今すぐ送る</button>
     </div>
-    <button id="send" class="btn ok" type="button">この写真を送る</button>
+    <button id="send" class="btn ok" type="button" disabled>写真を撮ってください</button>
   </footer>
 </div>
 
@@ -132,6 +126,7 @@
     <button id="save-settings" class="btn" type="button">登録する</button>
     <button id="settings-close" class="btn sub" type="button">閉じる</button>
     <button id="open-install" class="btn sub" type="button">📲 ホーム画面への追加のしかた</button>
+    <p class="hint" style="margin-top:10px;text-align:center">アプリの版：5（Google ドライブ保存・複数枚）</p>
   </section>
 </div>
 
@@ -154,8 +149,8 @@
   </section>
 </div>
 
-<script src="config.js?v=4"></script>
+<script src="config.js?v=5"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
