@@ -177,10 +177,14 @@
       card.querySelector('img').src = 'data:image/jpeg;base64,' + p.data;
       var ta = card.querySelector('textarea'); ta.value = p.comment || '';
       ['input', 'change', 'compositionend', 'blur'].forEach(function (ev) { ta.addEventListener(ev, function () { p.comment = ta.value; saveDraftLater(); }); });
+      ta.addEventListener('blur', function () { if (/^キーボードの/.test($('msg').textContent)) hideMsg(); });
       // カーソルの位置を覚える（「話す」で、ここに文字を入れる）
       ['click', 'keyup', 'select', 'input', 'blur', 'touchend'].forEach(function (ev) { ta.addEventListener(ev, function () { if (recKey === p.key) return; p.caret = ta.selectionStart; p.caretEnd = ta.selectionEnd; }); });
       var mic = card.querySelector('.mic');
-      if (mic) mic.onclick = function () { if (recKey === p.key) stopRec(); else startRec(p); };
+      if (mic) mic.onclick = function () {
+        if (IOS) { keyboardMic(p, ta); return; } // iPhone：キーボードのマイク（iPhone の音声入力）を使う
+        if (recKey === p.key) stopRec(); else startRec(p);
+      };
       if (recKey === p.key) setTimeout(function () { micUI(p.key, true); }, 0); // 描き直しても「止める」の表示を保つ
       card.querySelector('.del').onclick = function () {
         if ((p.comment || '').trim() && !confirm(i + 1 + '枚目の写真とコメントを外しますか？')) return;
@@ -204,6 +208,16 @@
   //  ・一度止まった音声認識は使い回せない。止めた合図（onend）が来ないこともある
   // そこで：「話す」を押すたびに新しく作ってその場で始める。前のものは、すぐに捨てる。自動で再開はしない
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  // iPhone・iPad では、ホーム画面のアプリの音声認識が、開くたびに1回しか聞き取らない（実機で確認）。
+  // そこで「話す」は、コメント欄にカーソルを入れてキーボードを出すだけにし、キーボードのマイクで話してもらう（カーソルの位置に入る）
+  var IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function keyboardMic(p, ta) {
+    var n = (ta.value || '').length, c = (typeof p.caret === 'number' && p.caret <= n) ? p.caret : n;
+    ta.focus(); // ボタンを押したその場で呼ぶと、キーボードが出る
+    try { ta.setSelectionRange(c, c); } catch (e) {}
+    show('キーボードの 🎤（マイク）を押して話してください。話し終わったら、キーボードの「完了」か、画面の空いている所を押します。', 'info');
+  }
+
   var rec = null, recKey = null, target = null, startAt = 0, tick = null, watch = null;
   if (!SR) $('no-speech').hidden = false;
   function cardOf(key) { return key ? $('list').querySelector('.card[data-key="' + key + '"]') : null; }
