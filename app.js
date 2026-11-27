@@ -220,7 +220,8 @@
     r.onresult = r.onerror = r.onend = r.onstart = r.onaudiostart = r.onsoundstart = r.onspeechstart = null;
     try { r.abort(); } catch (e) {}
   }
-  function finish() { // 画面を「話す」に戻す
+  function finish() { // 画面を「話す」に戻す。「聞き取り中です」のお知らせも消す（エラーのお知らせは残す）
+    if (/^聞き取り中/.test($('msg').textContent)) hideMsg();
     if (target) micUI(target.key, false);
     target = null; recKey = null;
   }
