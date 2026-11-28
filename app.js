@@ -1,8 +1,8 @@
-/* 現場写真：画面の動き（版12）
+/* 現場写真：画面の動き（版13）
    撮る：
    1. 現場名を入れる（前に使った現場名はボタンで選べる）
    2. 写真を撮る（アルバムからは複数枚選べる）→ 一覧に足す。長い辺 1600px の JPEG に縮める。撮影日時は写真の情報（EXIF）から読む
-   3. 写真ごとにコメント（「話す」、iPhone はキーボードのマイク）
+   3. 現場のコメント（現場ごとに1つ）と、写真ごとのコメント（キーボードのマイクで話せる）
    4. 「アプリに保存」：携帯の中（IndexedDB）に保存する。ここでは送らない
    過去の写真：
    5. 現場名・コメント・日付で探す。現場ごとに並べ、押すと大きく表示（コメントも直せる）
@@ -101,7 +101,7 @@
   function showView(v) {
     $('v-shoot').hidden = v !== 'shoot'; $('v-past').hidden = v !== 'past';
     $('tab-shoot').className = v === 'shoot' ? 'on' : ''; $('tab-past').className = v === 'past' ? 'on' : '';
-    if (v === 'past') { if (recKey) stopRec(); renderPast(); }
+    if (v === 'past') renderPast();
   }
   $('tab-shoot').onclick = function () { showView('shoot'); };
   $('tab-past').onclick = function () { showView('past'); };
@@ -116,15 +116,38 @@
     sites().slice(0, 8).forEach(function (s) {
       var b = document.createElement('button'); b.type = 'button'; b.textContent = s;
       if (s === $('site').value.trim()) b.className = 'on';
-      b.onclick = function () { $('site').value = s; store.set('site', s); showSites(); };
+      b.onclick = function () { $('site').value = s; store.set('site', s); showSites(); showNote(); };
       box.appendChild(b);
     });
     box.hidden = !sites().length;
   }
   function rememberSite(s) { store.set('sites', JSON.stringify([s].concat(sites().filter(function (x) { return x !== s; })).slice(0, 30))); showSites(); }
+
+  // ---------- 現場のコメント（現場ごとに1つ。同じ現場名を選ぶと前のコメントが出る） ----------
+  function notes() { try { return JSON.parse(store.get('site_notes') || '{}'); } catch (e) { return {}; } }
+  function noteOf(site) { return notes()[site] || ''; }
+  function setNote(site, v) {
+    if (!site) return;
+    var n = notes(); v = String(v || '').slice(0, 2000);
+    if (v.trim()) n[site] = v; else delete n[site];
+    store.set('site_notes', JSON.stringify(n));
+  }
+  var noteSite = ''; // コメント欄がいま表している現場
+  function showNote() { noteSite = $('site').value.trim(); $('site-note').value = noteOf(noteSite); }
+  $('site-note').addEventListener('input', function () {
+    var s = $('site').value.trim();
+    if (!s) return; // 現場名がないときは、保存のときにまとめて入れる
+    noteSite = s; setNote(s, $('site-note').value);
+  });
   $('site').value = store.get('site');
   $('site').addEventListener('input', function () { store.set('site', $('site').value); showSites(); });
-  showSites();
+  // 現場名を入れ終わったら、その現場のコメントを出す（書きかけのコメントがあって、その現場にまだコメントがなければ、そのまま使う）
+  $('site').addEventListener('change', function () {
+    var s = $('site').value.trim(), cur = $('site-note').value;
+    if (s && !noteOf(s) && cur.trim() && !noteSite) { setNote(s, cur); noteSite = s; return; }
+    showNote();
+  });
+  showSites(); showNote();
 
   // ---------- 撮った写真の一覧（何枚でも。1枚ごとにコメント） ----------
   // photos：[{ key, data: base64(JPEG), thumb: base64(小さいJPEG), shot: 'YYYY-MM-DD HH:MM', comment }]。携帯の中（draft）にも残す
@@ -210,24 +233,13 @@
     photos.forEach(function (p, i) {
       var card = document.createElement('div'); card.className = 'card'; card.dataset.key = p.key;
       card.innerHTML = '<img alt=""><div class="body"><div class="meta"><b>' + (i + 1) + '枚目</b>　撮影日時：' + p.shot + '</div>' +
-        '<div class="cm"><textarea placeholder="この写真のコメント（「話す」で声で入れられます）"></textarea>' +
-        (SR ? '<button class="mic" type="button">話す</button>' : '') + '</div><div class="interim"></div></div>' +
+        '<div class="cm"><textarea placeholder="この写真のコメント（欄を押して、キーボードの 🎤 で話せます）"></textarea></div></div>' +
         '<button class="del" type="button" aria-label="この写真を外す">×</button>';
       card.querySelector('img').src = 'data:image/jpeg;base64,' + (p.thumb || p.data);
       var ta = card.querySelector('textarea'); ta.value = p.comment || '';
       ['input', 'change', 'compositionend', 'blur'].forEach(function (ev) { ta.addEventListener(ev, function () { p.comment = ta.value; saveDraftLater(); }); });
-      ta.addEventListener('blur', function () { if (/^キーボードの/.test($('msg').textContent)) hideMsg(); });
-      // カーソルの位置を覚える（「話す」で、ここに文字を入れる）
-      ['click', 'keyup', 'select', 'input', 'blur', 'touchend'].forEach(function (ev) { ta.addEventListener(ev, function () { if (recKey === p.key) return; p.caret = ta.selectionStart; p.caretEnd = ta.selectionEnd; }); });
-      var mic = card.querySelector('.mic');
-      if (mic) mic.onclick = function () {
-        if (IOS) { keyboardMic(p, ta); return; } // iPhone：キーボードのマイク（iPhone の音声入力）を使う
-        if (recKey === p.key) stopRec(); else startRec(p);
-      };
-      if (recKey === p.key) setTimeout(function () { micUI(p.key, true); }, 0); // 描き直しても「止める」の表示を保つ
       card.querySelector('.del').onclick = function () {
         if ((p.comment || '').trim() && !confirm(i + 1 + '枚目の写真とコメントを外しますか？')) return;
-        if (recKey === p.key) stopRec();
         photos = photos.filter(function (x) { return x.key !== p.key; }); saveDraft(); render();
       };
       list.appendChild(card);
@@ -241,114 +253,18 @@
   // カメラから戻ったときに画面が読み直されても、撮った写真とコメントは残す
   idb.getDraft().then(function (l) { if (Array.isArray(l) && l.length && !photos.length) { photos = l; render(); } }, function () {});
 
-  // ---------- コメントの音声入力（押した写真のコメント欄の、カーソルの位置に入る） ----------
-  // iPhone の決まりごと（実機で分かったこと）：
-  //  ・音声認識は「ボタンを押したその場」でしか始められない（あとから時間をおいて始めると動かない）
-  //  ・一度止まった音声認識は使い回せない。止めた合図（onend）が来ないこともある
-  // そこで：「話す」を押すたびに新しく作ってその場で始める。前のものは、すぐに捨てる。自動で再開はしない
-  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  // iPhone・iPad では、ホーム画面のアプリの音声認識が、開くたびに1回しか聞き取らない（実機で確認）。
-  // そこで「話す」は、コメント欄にカーソルを入れてキーボードを出すだけにし、キーボードのマイクで話してもらう（カーソルの位置に入る）
-  var IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  function keyboardMic(p, ta) {
-    var n = (ta.value || '').length, c = (typeof p.caret === 'number' && p.caret <= n) ? p.caret : n;
-    ta.focus(); // ボタンを押したその場で呼ぶと、キーボードが出る
-    try { ta.setSelectionRange(c, c); } catch (e) {}
-    show('キーボードの 🎤（マイク）を押して話してください。話し終わったら、キーボードの「完了」か、画面の空いている所を押します。', 'info');
-  }
-
-  var rec = null, recKey = null, target = null, startAt = 0, tick = null, watch = null;
-  if (!SR) $('no-speech').hidden = false;
-  function cardOf(key) { return key ? $('list').querySelector('.card[data-key="' + key + '"]') : null; }
-  function micUI(key, on) {
-    var card = cardOf(key); if (!card) return;
-    card.classList.toggle('rec-on', on);
-    var mic = card.querySelector('.mic'); if (mic) { mic.textContent = on ? '止める' : '話す'; mic.classList.toggle('on', on); }
-    if (!on) card.querySelector('.interim').textContent = '';
-  }
-  // 前の音声認識を、合図を待たずに捨てる
-  function discard() {
-    var r = rec; rec = null; clearTimeout(watch); clearInterval(tick);
-    if (!r) return;
-    r.onresult = r.onerror = r.onend = r.onstart = r.onaudiostart = r.onsoundstart = r.onspeechstart = null;
-    try { r.abort(); } catch (e) {}
-  }
-  function finish() { // 画面を「話す」に戻す。「聞き取り中です」のお知らせも消す（エラーのお知らせは残す）
-    if (/^聞き取り中/.test($('msg').textContent)) hideMsg();
-    if (target) micUI(target.key, false);
-    target = null; recKey = null;
-  }
-  // 写真 p のコメントに入れ始める（ボタンを押したその場で呼ぶこと）
-  function startRec(p) {
-    discard();
-    if (target && target !== p) micUI(target.key, false);
-    target = p; recKey = p.key;
-    // 入る場所：カーソルを置いた位置。置いていなければ、最後に行を変えて足す
-    var text = p.comment || '', c = p.caret, tBase, tAfter;
-    if (typeof c === 'number' && c >= 0 && c <= text.length) {
-      var ce = (typeof p.caretEnd === 'number' && p.caretEnd >= c && p.caretEnd <= text.length) ? p.caretEnd : c;
-      tBase = text.slice(0, c); tAfter = text.slice(ce);
-    } else {
-      var cur = text.replace(/\s*$/, ''); tBase = cur ? cur + '\n' : ''; tAfter = '';
-    }
-    p.caretEnd = null;
-    var r = new SR(), t = p; // t：この回の入り先（止めたあとに遅れて届いた文字も、ここに入れる）
-    var alive = function () { if (rec === r) clearTimeout(watch); };
-    r.lang = 'ja-JP'; r.continuous = true; r.interimResults = true;
-    r.onstart = r.onaudiostart = r.onsoundstart = alive;
-    r.onresult = function (e) {
-      if (rec !== r) return;
-      alive();
-      // この回の確定した文字を、はじめから組み立て直す（重なって届いても二重にならない）
-      var fin = '', mid = '';
-      for (var i = 0; i < e.results.length; i++) { if (e.results[i].isFinal) fin += e.results[i][0].transcript; else mid += e.results[i][0].transcript; }
-      var card = cardOf(t.key);
-      if (fin) {
-        t.comment = tBase + fin + tAfter;
-        t.caret = (tBase + fin).length; // 次に「話す」を押したときは、ここから続ける
-        saveDraftLater();
-        if (card) card.querySelector('textarea').value = t.comment;
-      }
-      if (card && recKey === t.key) card.querySelector('.interim').textContent = mid;
-    };
-    r.onspeechstart = hideMsg;
-    r.onerror = function (e) {
-      if (rec !== r || e.error === 'no-speech' || e.error === 'aborted') return;
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') show('マイクが許可されていません。「設定」→「Safari」→「マイク」で許可するか、キーボードのマイクで話してください。', 'err');
-      else show('「話す」がうまく動きません（' + e.error + '）。もう一度押すか、キーボードのマイクで話してください。', 'err');
-      discard(); if (target === t) finish();
-    };
-    r.onend = function () { if (rec !== r) return; rec = null; clearTimeout(watch); clearInterval(tick); if (target === t) finish(); }; // 話す間があいて止まったら「話す」に戻す
-    rec = r;
-    try { r.start(); } catch (e) { rec = null; finish(); show('音声認識を始められませんでした。キーボードのマイクで話してください。', 'err'); return; }
-    micUI(p.key, true);
-    show('聞き取り中です。' + (photos.indexOf(p) + 1) + '枚目のコメントを話してください。', 'info');
-    startAt = Date.now();
-    tick = setInterval(function () { if (rec === r && Date.now() - startAt > MAX_SEC * 1000) stopRec(); }, 500);
-    // 5秒たっても何の合図もない：知らせて「話す」に戻す
-    watch = setTimeout(function () { if (rec === r) { discard(); if (target === t) finish(); show('音声認識が始まりませんでした。もう一度「話す」を押すか、コメント欄をタップしてキーボードのマイクで話してください。', 'err'); } }, 5000);
-  }
-  function stopRec() {
-    var r = rec;
-    finish(); clearInterval(tick); clearTimeout(watch);
-    if (!r) return;
-    try { r.stop(); } catch (e) {}
-    // 止まった合図が1秒たっても来なければ捨てる（届いた文字はそれまでに入っている）
-    setTimeout(function () { if (rec === r) discard(); }, 1000);
-  }
-
   // ---------- アプリに保存（送らない） ----------
   // 保存した写真：{ id, site, employee, shot, created, comment, thumb, size, sentAt }（大きい写真は photos に別に入れる）
   var recs = [];
   function loadRecords() { return idb.allRecords().then(function (l) { recs = l; updateBadge(); }); }
   var saving = false;
   $('save').onclick = function () {
-    if (recKey) stopRec();
     var name = store.get('employee'), site = $('site').value.trim();
     if (!name) { openSettings(); show('先に撮影者（社員名）を登録してください。', 'err'); return; }
     if (!site) { show('現場名を入れてください。', 'err'); $('site').focus(); return; }
     if (!photos.length) { show('写真を撮ってください。', 'err'); return; }
     rememberSite(site);
+    setNote(site, $('site-note').value); noteSite = site; // 現場のコメントも、この現場のものとして残す
     saving = true; render();
     var list = photos.slice(), created = now();
     Promise.all(list.map(function (p) { return p.thumb ? p.thumb : thumbOf(p.data); })).then(function (thumbs) {
@@ -396,42 +312,71 @@
     }
     return t;
   }
-  function matches(r, toks) {
+  // 写真が探す言葉に合うか。現場名・現場のコメント・写真のコメント・撮影者・撮影日時に、全部の言葉が入っていれば合う
+  function matches(r, toks, nt) {
     if (filter === 'unsent' && r.sentAt) return false;
     if (!toks.length) return true;
-    var hay = norm(r.site + ' ' + r.comment + ' ' + r.employee + ' ' + r.shot);
+    var hay = norm(r.site + ' ' + (nt[r.site] || '') + ' ' + r.comment + ' ' + r.employee + ' ' + r.shot);
     return toks.every(function (t) { return hay.indexOf(t) >= 0; });
   }
   function sizeText(n) { var mb = n / 1048576; return mb < 1 ? Math.max(1, Math.round(n / 1024)) + 'KB' : (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + 'MB'; }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function dayLabel(d) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? Number(m[2]) + '/' + Number(m[3]) : (d || ''); }
+  // 現場の情報：枚数・撮った日の範囲・送った枚数
+  function siteInfo(all) {
+    var sent = all.filter(function (r) { return r.sentAt; }).length;
+    var days = all.map(function (r) { return r.shot.slice(0, 10); }).sort();
+    var range = days[0] === days[days.length - 1] ? dayLabel(days[0]) : dayLabel(days[0]) + '〜' + dayLabel(days[days.length - 1]);
+    var s = el('span', 'sinfo', all.length + '枚・' + range + '　');
+    if (sent) s.appendChild(el('span', 'gsent', sent === all.length ? '✓ 全部送信済' : '✓ 送信済 ' + sent + '枚・'));
+    if (sent < all.length) s.appendChild(el('span', 'unsent', '未送信 ' + (all.length - sent) + '枚'));
+    return s;
+  }
+  var openSite = ''; // 開いている現場（空なら現場の一覧）
   function renderPast() {
-    var toks = $('q').value.trim().split(/[\s　]+/).filter(Boolean).map(normTok);
-    var list = recs.filter(function (r) { return matches(r, toks); });
-    // 現場ごとにまとめる。新しく撮った現場が上、現場の中も新しい写真が上
-    var groups = {}, order = [];
-    list.forEach(function (r) { if (!groups[r.site]) { groups[r.site] = []; order.push(r.site); } groups[r.site].push(r); });
-    order.forEach(function (s) { groups[s].sort(function (a, b) { return (b.shot + b.id).localeCompare(a.shot + a.id); }); });
-    order.sort(function (a, b) { return groups[b][0].shot.localeCompare(groups[a][0].shot); });
+    var toks = $('q').value.trim().split(/[\s　]+/).filter(Boolean).map(normTok), nt = notes();
+    var narrowed = toks.length > 0 || filter !== 'all';
+    // 現場ごとにまとめる（全部の写真と、探す言葉・絞り込みに合う写真）。新しく撮った現場が上、写真も新しいものが上
+    var all = {}, hit = {}, order = [];
+    recs.slice().sort(function (a, b) { return (b.shot + b.id).localeCompare(a.shot + a.id); }).forEach(function (r) {
+      if (!all[r.site]) { all[r.site] = []; hit[r.site] = []; order.push(r.site); }
+      all[r.site].push(r);
+      if (matches(r, toks, nt)) hit[r.site].push(r);
+    });
+    var sitesHit = order.filter(function (s) { return hit[s].length; });
+    if (openSite && !(hit[openSite] && hit[openSite].length)) openSite = '';
     var box = $('past-list'); box.innerHTML = ''; shown = [];
-    if (!list.length) {
-      box.appendChild(el('div', 'empty', recs.length ? '見つかりませんでした。探す言葉を変えてください。' : 'まだ保存した写真はありません。「撮る」で写真を撮って「アプリに保存」してください。'));
-    }
-    order.forEach(function (site) {
-      var g = groups[site], sent = g.filter(function (r) { return r.sentAt; }).length;
-      var days = g.map(function (r) { return r.shot.slice(0, 10); }).sort();
-      var dayLabel = function (d) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d); return m ? Number(m[2]) + '/' + Number(m[3]) : d; };
-      var first = days[0], last = days[days.length - 1];
-      var range = first === last ? dayLabel(first) : dayLabel(first) + '〜' + dayLabel(last);
-      var gr = el('div', 'group'), head = el('div', 'ghead'), nm = el('div', 'gname');
-      nm.appendChild(el('b', '', site));
-      var info = el('span', '', g.length + '枚・' + range + '　');
-      info.appendChild(el('span', 'gsent', sent === g.length ? '✓ 全部送信済' : sent ? '✓ 送信済 ' + sent + '枚' : ''));
-      if (!sent) info.appendChild(el('span', '', '未送信'));
-      nm.appendChild(info); head.appendChild(nm);
+    $('site-head').hidden = !openSite;
+
+    if (!openSite) {
+      // ---- 現場の一覧 ----
+      if (!sitesHit.length) box.appendChild(el('div', 'empty', recs.length ? '見つかりませんでした。探す言葉を変えてください。' : 'まだ保存した写真はありません。「撮る」で写真を撮って「アプリに保存」してください。'));
+      sitesHit.forEach(function (site) {
+        var row = el('button', 'srow'); row.type = 'button';
+        var img = el('img', 'sthumb'); img.alt = ''; img.loading = 'lazy';
+        var t = hit[site][0].thumb; if (t) img.src = 'data:image/jpeg;base64,' + t;
+        row.appendChild(img);
+        var body = el('div', 'sbody');
+        body.appendChild(el('b', '', site));
+        body.appendChild(siteInfo(all[site]));
+        if (nt[site]) body.appendChild(el('div', 'snote', nt[site]));
+        if (narrowed && hit[site].length < all[site].length) body.appendChild(el('div', 'shit', '合う写真 ' + hit[site].length + '枚'));
+        row.appendChild(body);
+        row.appendChild(el('span', 'arrow', '›'));
+        row.onclick = function () { openSite = site; renderPast(); $('past-list').scrollTop = 0; };
+        box.appendChild(row);
+      });
+    } else {
+      // ---- 開いた現場の写真 ----
+      var g = hit[openSite];
+      $('sh-name').textContent = openSite;
+      var info = $('sh-info'); info.innerHTML = ''; info.appendChild(siteInfo(all[openSite]));
+      if (document.activeElement !== $('sh-note')) $('sh-note').value = nt[openSite] || '';
+      $('sh-filter').hidden = !(narrowed && g.length < all[openSite].length);
+      $('sh-filter').textContent = '探す言葉・絞り込みに合う ' + g.length + ' 枚だけを表示しています（全部で ' + all[openSite].length + ' 枚）';
       var allSel = g.every(function (r) { return sel[r.id]; });
-      var gb = el('button', '', allSel ? '全部外す' : '全部選ぶ'); gb.type = 'button';
-      gb.onclick = function () { g.forEach(function (r) { if (allSel) delete sel[r.id]; else sel[r.id] = 1; }); renderPast(); };
-      head.appendChild(gb); gr.appendChild(head);
+      $('grp-all').textContent = allSel ? '全部外す' : '全部選ぶ';
+      $('grp-all').onclick = function () { g.forEach(function (r) { if (allSel) delete sel[r.id]; else sel[r.id] = 1; }); renderPast(); };
       var grid = el('div', 'grid');
       g.forEach(function (r) {
         var idx = shown.length; shown.push(r);
@@ -449,12 +394,19 @@
         th.onclick = function () { openViewer(idx); };
         grid.appendChild(th);
       });
-      gr.appendChild(grid); box.appendChild(gr);
-    });
+      var wrap = el('div', 'group'); wrap.appendChild(grid); box.appendChild(wrap);
+    }
     // 使っている容量（写真の大きさの合計）
     $('usage').textContent = recs.length ? '携帯に ' + recs.length + '枚（約' + sizeText(recs.reduce(function (a, r) { return a + (r.size || 0); }, 0)) + '）' : '';
     showSelBar();
   }
+  $('back').onclick = function () { openSite = ''; renderPast(); };
+  // 現場のコメントを直す（撮る画面のコメント欄と同じもの）
+  $('sh-note').addEventListener('input', function () {
+    if (!openSite) return;
+    setNote(openSite, $('sh-note').value);
+    if ($('site').value.trim() === openSite) $('site-note').value = $('sh-note').value;
+  });
   function selIds() { return recs.filter(function (r) { return sel[r.id]; }).map(function (r) { return r.id; }); }
   function showSelBar() {
     var n = selIds().length;
@@ -614,7 +566,7 @@
     var meta = {
       name: r.shot.replace(/[-:]/g, '').replace(' ', '_') + '_' + safeName(r.employee) + '_' + safeName(r.site) + '.jpg',
       parents: [folder], mimeType: 'image/jpeg',
-      description: JSON.stringify({ id: r.id, site: r.site, employee: r.employee, shot: r.shot, created: r.created, comment: r.comment || '' }),
+      description: JSON.stringify({ id: r.id, site: r.site, employee: r.employee, shot: r.shot, created: r.created, comment: r.comment || '', note: noteOf(r.site) }), // note：現場のコメント
       appProperties: { genba: 'v1', rid: r.id }
     };
     var bd = 'genba' + r.id;
@@ -692,7 +644,8 @@
     Promise.all(list.map(function (r) { return idb.getPhoto(r.id); })).then(function (datas) {
       var items = list.map(function (r, i) { return { id: r.id, site: r.site, employee: r.employee, shot: r.shot, created: r.created, comment: r.comment || '', photo: datas[i] || '' }; })
         .filter(function (x) { return x.photo; });
-      var body = JSON.stringify({ app: SHARE_MARK, v: 1, from: store.get('employee'), made: now(), items: items });
+      var nts = {}; items.forEach(function (x) { if (noteOf(x.site)) nts[x.site] = noteOf(x.site); }); // 現場のコメント
+      var body = JSON.stringify({ app: SHARE_MARK, v: 1, from: store.get('employee'), made: now(), notes: nts, items: items });
       shareFile = new File([body], shareName(list), { type: 'text/plain' });
       if (shareUrl) URL.revokeObjectURL(shareUrl);
       shareUrl = URL.createObjectURL(shareFile);
@@ -735,6 +688,14 @@
           });
           return items.length ? idb.addAll(items) : null;
         }).then(function () {
+          // 現場のコメント：こちらになければそのまま入れる。違うコメントがあれば、下に足す
+          var nts = j.notes && typeof j.notes === 'object' ? j.notes : {};
+          Object.keys(nts).forEach(function (s) {
+            var v = String(nts[s] || '').trim(), mine = noteOf(s);
+            if (!v || mine.indexOf(v) >= 0) return;
+            setNote(s, mine ? mine + '\n（' + (j.from || 'ほかの人') + ' さんから）' + v : v);
+          });
+          showNote();
           if (fresh.length) {
             // 受け取った現場を、現場名の候補にも入れる
             var ss = []; fresh.forEach(function (x) { if (ss.indexOf(x.site) < 0) ss.push(x.site); });
@@ -756,7 +717,7 @@
 
   // ---------- ホーム画面に追加 ----------
   var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  var ios = IOS;
+  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   var android = /Android/.test(navigator.userAgent);
   var deferred = null;
   function showInstall(force) {

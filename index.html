@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#1f5fa8">
 <title>現場写真</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192-v13.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-v13.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="現場写真">
@@ -23,6 +23,7 @@
 
   header { flex: none; background: var(--main); color: var(--on-main); padding: 8px 12px; padding-top: calc(8px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 8px; }
   header h1 { font-size: 1.05rem; margin: 0; flex: none; }
+  header h1 .ver { display: inline-block; background: #f5a623; color: #fff; border-radius: 999px; font-size: .7rem; padding: 0 8px; vertical-align: 2px; margin-left: 2px; }
   .who { margin-left: auto; min-width: 0; max-width: 62%; background: rgba(255,255,255,.18); color: var(--on-main); border: 1px solid rgba(255,255,255,.5); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* 「撮る」「過去の写真」の切り替え */
@@ -36,6 +37,25 @@
   .row { flex: none; display: flex; align-items: center; gap: 8px; }
   .row label { font-weight: 700; font-size: .9rem; white-space: nowrap; }
   .row input { flex: 1; min-width: 0; }
+  .row.top { align-items: flex-start; }
+  .row.top label { padding-top: 6px; }
+  #site-note { flex: 1; min-width: 0; height: 3.4em; font-size: .95rem; padding: 6px 10px; }
+  /* 過去の写真：現場の一覧 */
+  .srow { flex: none; display: flex; gap: 10px; align-items: center; width: 100%; background: var(--white); border: 1px solid var(--line); border-radius: 10px; padding: 8px; font: inherit; color: var(--text); text-align: left; }
+  .srow .sthumb { flex: none; width: 64px; height: 64px; border-radius: 6px; object-fit: cover; background: #eef2f6; }
+  .srow .sbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .srow .sbody b { font-size: 1rem; word-break: break-all; }
+  .srow .sinfo { font-size: .75rem; color: var(--sub); }
+  .srow .snote { font-size: .82rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all; }
+  .srow .shit { font-size: .75rem; color: var(--main); font-weight: 700; }
+  .srow .arrow { flex: none; color: var(--sub); font-size: 1.3rem; }
+  .gsent { color: var(--ok); font-weight: 700; }
+  .unsent { color: #b06a00; font-weight: 700; }
+  .site-head { flex: none; display: flex; flex-direction: column; gap: 3px; background: var(--white); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+  .shead-top { display: flex; justify-content: space-between; }
+  .shead-top button { border: 1px solid var(--main); background: var(--white); color: var(--main); border-radius: 8px; padding: 3px 10px; font: inherit; font-size: .85rem; }
+  #sh-name { font-size: 1.05rem; word-break: break-all; }
+  #sh-note { height: 3.4em; font-size: .9rem; padding: 6px 8px; }
 
   /* 前に使った現場名：押すと入る */
   .recent { flex: none; display: flex; gap: 6px; overflow-x: auto; margin-top: -2px; padding-bottom: 2px; }
@@ -138,7 +158,7 @@
 <body>
 <div class="app">
   <header>
-    <h1>現場写真</h1>
+    <h1>現場写真 <span class="ver">版13</span></h1>
     <button id="open-settings" class="who" type="button" aria-label="社員名を登録・変更する">👤 <span id="who">（未登録）</span></button>
   </header>
   <nav class="tabs">
@@ -155,11 +175,14 @@
         <datalist id="site-list"></datalist>
       </div>
       <div class="recent" id="recent" hidden></div>
+      <div class="row top">
+        <label for="site-note">コメント</label>
+        <textarea id="site-note" placeholder="この現場のコメント（工事の内容・注意点など）"></textarea>
+      </div>
 
       <div class="list" id="list">
-        <div class="empty" id="empty">下のボタンで写真を撮ってください。<br>何枚でも続けて撮れます。写真ごとにコメントを入れて「アプリに保存」します。<br>送るのは、必要なときに「過去の写真」から選んで送ります。</div>
+        <div class="empty" id="empty">下のボタンで写真を撮ってください。<br>何枚でも続けて撮れます。写真ごとにコメントを入れて「アプリに保存」します。<br>コメントは、欄を押してキーボードの 🎤（マイク）で話しても入れられます。</div>
       </div>
-      <p class="hint" id="no-speech" hidden>「話す」が使えない機種です。コメント欄をタップし、キーボードの<b>マイク</b>で話してください。</p>
       <div class="photo-btns">
         <label>📷 写真を撮る<input id="camera" type="file" accept="image/*" capture="environment"></label>
         <label class="sub">🖼 アルバムから<input id="album" type="file" accept="image/*" multiple></label>
@@ -180,6 +203,14 @@
         <button type="button" data-f="all" class="on">全部</button>
         <button type="button" data-f="unsent">まだ送っていない</button>
         <label class="recv">📥 受け取る<input id="recv-file" type="file"></label>
+      </div>
+      <!-- 現場を開いたとき：現場名・現場のコメント（直せる） -->
+      <div id="site-head" class="site-head" hidden>
+        <div class="shead-top"><button id="back" type="button">‹ 現場の一覧</button><button id="grp-all" type="button">全部選ぶ</button></div>
+        <b id="sh-name"></b>
+        <span id="sh-info" class="hint"></span>
+        <textarea id="sh-note" placeholder="この現場のコメント（直せます）"></textarea>
+        <span id="sh-filter" class="hint" hidden></span>
       </div>
       <div class="list" id="past-list"></div>
     </main>
@@ -239,7 +270,7 @@
     <button id="save-settings" class="btn" type="button">登録する</button>
     <button id="settings-close" class="btn sub" type="button">閉じる</button>
     <button id="open-install" class="btn sub" type="button">📲 ホーム画面への追加のしかた</button>
-    <p class="hint" style="margin-top:10px;text-align:center">アプリの版：12（アプリの中に保存・過去の写真を探す・選んで送る・ほかの人に渡す）</p>
+    <p class="hint" style="margin-top:10px;text-align:center">アプリの版：13（現場のコメント・現場の一覧・「話す」をなくす・アイコンに版の番号）</p>
   </section>
 </div>
 
@@ -262,8 +293,8 @@
   </section>
 </div>
 
-<script src="config.js?v=12"></script>
+<script src="config.js?v=13"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

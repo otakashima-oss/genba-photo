@@ -1,6 +1,6 @@
 // 電波がないときでもアプリを開けるようにする（https で公開したときに働く）
-const CACHE = "genba-v12";
-const FILES = ["./", "index.html", "app.js", "config.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "office.html", "office.js"];
+const CACHE = "genba-v13";
+const FILES = ["./", "index.html", "app.js", "config.js", "manifest.webmanifest", "icons/icon-192-v13.png", "icons/icon-512-v13.png", "icons/apple-touch-icon-v13.png", "office.html", "office.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
