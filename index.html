@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="現場写真">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>
-  /* 画面の高さに収める。撮った写真の一覧だけがスクロールする */
+  /* 画面の高さに収める。一覧の部分だけがスクロールする */
   :root { --main: #1f5fa8; --main-dark: #174a84; --on-main: #fff; --rec: #d93025; --ok: #1e7b3a; --bg: #f3f6fa; --text: #1f2933; --sub: #5b6875; --line: #c9d3de; --white: #fff; }
   * { box-sizing: border-box; }
   html { font-size: 17.5px; }
@@ -25,6 +25,13 @@
   header h1 { font-size: 1.05rem; margin: 0; flex: none; }
   .who { margin-left: auto; min-width: 0; max-width: 62%; background: rgba(255,255,255,.18); color: var(--on-main); border: 1px solid rgba(255,255,255,.5); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+  /* 「撮る」「過去の写真」の切り替え */
+  .tabs { flex: none; display: flex; background: var(--white); border-bottom: 1px solid var(--line); }
+  .tabs button { flex: 1; border: 0; background: none; font: inherit; font-weight: 700; font-size: .95rem; padding: 9px 4px; color: var(--sub); border-bottom: 3px solid transparent; }
+  .tabs button.on { color: var(--main); border-bottom-color: var(--main); }
+  .badge { display: inline-block; background: #f0a020; color: #fff; border-radius: 999px; font-size: .72rem; padding: 0 7px; margin-left: 4px; vertical-align: 1px; }
+
+  .view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 0; }
   .row { flex: none; display: flex; align-items: center; gap: 8px; }
   .row label { font-weight: 700; font-size: .9rem; white-space: nowrap; }
@@ -32,8 +39,8 @@
 
   /* 前に使った現場名：押すと入る */
   .recent { flex: none; display: flex; gap: 6px; overflow-x: auto; margin-top: -2px; padding-bottom: 2px; }
-  .recent button { flex: none; border: 1px solid var(--main); background: var(--white); color: var(--main); border-radius: 999px; padding: 3px 12px; font: inherit; font-size: .85rem; white-space: nowrap; }
-  .recent button.on { background: var(--main); color: var(--on-main); }
+  .recent button, .filters button { flex: none; border: 1px solid var(--main); background: var(--white); color: var(--main); border-radius: 999px; padding: 3px 12px; font: inherit; font-size: .85rem; white-space: nowrap; }
+  .recent button.on, .filters button.on { background: var(--main); color: var(--on-main); }
   /* 撮った写真の一覧（1枚ごとにコメント）。この部分だけスクロールする */
   .list { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 8px; padding-bottom: 4px; }
   .empty { margin: auto; color: var(--sub); font-size: .9rem; text-align: center; padding: 16px; border: 2px dashed var(--line); border-radius: 10px; width: 100%; }
@@ -58,21 +65,69 @@
   input, textarea { width: 100%; font: inherit; font-size: 1rem; padding: 8px 10px; border: 1px solid #b7c3cf; border-radius: 8px; background: var(--white); color: var(--text); }
   textarea { resize: none; }
 
+  /* 過去の写真：現場ごとに並べる */
+  .filters { flex: none; display: flex; align-items: center; gap: 6px; }
+  .usage { margin-left: auto; font-size: .75rem; color: var(--sub); white-space: nowrap; }
+  .recv { margin-left: auto; flex: none; border: 1px solid var(--ok); background: var(--white); color: var(--ok); border-radius: 999px; padding: 3px 12px; font-size: .85rem; font-weight: 700; white-space: nowrap; }
+  .recv input { display: none; }
+  .two .btn.sub.half { flex: 1; }
+  .from { display: inline-block; background: #e9effa; color: var(--main-dark); border-radius: 4px; font-size: .75rem; padding: 0 6px; margin-left: 4px; }
+  .group { flex: none; background: var(--white); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+  .ghead { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+  .ghead .gname { flex: 1; min-width: 0; }
+  .ghead .gname b { display: block; font-size: 1rem; word-break: break-all; }
+  .ghead .gname span { font-size: .75rem; color: var(--sub); }
+  .ghead button { flex: none; border: 1px solid var(--main); background: var(--white); color: var(--main); border-radius: 8px; padding: 3px 8px; font: inherit; font-size: .8rem; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .th { position: relative; border: 0; padding: 0; background: none; font: inherit; text-align: left; color: var(--text); min-width: 0; }
+  .th .pic { position: relative; width: 100%; padding-top: 100%; border-radius: 6px; overflow: hidden; background: #eef2f6; outline: 3px solid transparent; outline-offset: -3px; }
+  .th .pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .th.sel .pic { outline-color: var(--main); }
+  .th .chk { position: absolute; top: 3px; right: 3px; width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,.35); color: #fff; font-size: .95rem; line-height: 26px; text-align: center; padding: 0; }
+  .th.sel .chk { background: var(--main); }
+  /* 送信済み：写真の下に緑の帯（ひと目で分かるように） */
+  .th .sent { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(30,123,58,.92); color: #fff; font-size: .75rem; font-weight: 700; text-align: center; padding: 2px 0; }
+  .th.is-sent .pic { outline-color: var(--ok); }
+  .th.is-sent.sel .pic { outline-color: var(--main); }
+  .ghead .gname .gsent { color: var(--ok); font-weight: 700; }
+  .vsent { border-radius: 8px; padding: 6px 10px; font-size: .9rem; font-weight: 700; }
+  .vsent.done { background: #e8f6ec; color: #1c5a30; border: 1px solid #8fcea2; }
+  .vsent.not { background: #fff6e0; color: #6b4a00; border: 1px solid #f0c36d; }
+  .th .cap { font-size: .72rem; color: var(--sub); margin-top: 2px; }
+  .th .ctext { font-size: .78rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all; }
+
   footer { flex: none; padding: 8px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
-  .outbox { display: flex; align-items: center; gap: 8px; font-size: .85rem; background: #fff6e0; border: 1px solid #f0c36d; border-radius: 8px; padding: 4px 8px; margin-bottom: 6px; }
-  .outbox .btn { width: auto; margin: 0 0 0 auto; padding: 4px 10px; font-size: .85rem; }
+  .selbar { display: flex; align-items: center; gap: 8px; font-size: .85rem; margin-bottom: 6px; }
+  .selbar button { margin-left: auto; border: 0; background: none; color: var(--main); font: inherit; font-size: .85rem; text-decoration: underline; padding: 2px 4px; }
+  .two { display: flex; gap: 8px; }
+  .two .btn { margin-top: 0; }
+  .two .btn.ok { flex: 2; }
+  .two .btn.sub { flex: 1; }
   .btn { display: block; width: 100%; padding: 13px; border: 0; border-radius: 8px; font: inherit; font-weight: 700; font-size: 1.05rem; background: var(--main); color: var(--on-main); margin-top: 10px; }
   .btn.ok { background: var(--ok); color: var(--white); margin-top: 0; }
   .btn.sub { background: var(--white); color: var(--main); border: 1px solid var(--main); padding: 9px; font-size: .95rem; }
-  .btn:disabled { opacity: .6; }
+  .btn.danger { color: var(--rec); border-color: var(--rec); }
+  .btn:disabled { opacity: .5; }
 
-  .msg { position: fixed; left: 50%; transform: translateX(-50%); top: calc(52px + env(safe-area-inset-top)); width: calc(100% - 24px); max-width: 536px; z-index: 20; border-radius: 8px; padding: 10px 12px; font-size: .95rem; display: none; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+  .msg { position: fixed; left: 50%; transform: translateX(-50%); top: calc(52px + env(safe-area-inset-top)); width: calc(100% - 24px); max-width: 536px; z-index: 50; border-radius: 8px; padding: 10px 12px; font-size: .95rem; display: none; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
   .msg.show { display: block; }
   .msg.err { background: #fdecea; border: 1px solid #e6a39b; color: #8a2a20; }
   .msg.good { background: #e8f6ec; border: 1px solid #8fcea2; color: #1c5a30; }
   .msg.info { background: #fff6e0; border: 1px solid #f0c36d; }
 
-  .overlay { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
+  /* 写真を大きく見る */
+  .viewer { position: fixed; inset: 0; z-index: 40; background: #111; color: #fff; display: flex; flex-direction: column; }
+  .vbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px; padding-top: calc(8px + env(safe-area-inset-top)); }
+  .vbar button { border: 1px solid rgba(255,255,255,.5); background: rgba(255,255,255,.12); color: #fff; border-radius: 8px; font: inherit; font-size: .95rem; padding: 5px 12px; }
+  .vbar #v-pos { flex: 1; text-align: center; font-size: .85rem; }
+  .vimg { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  .vimg img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .vinfo { flex: none; background: var(--white); color: var(--text); padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); border-radius: 12px 12px 0 0; display: flex; flex-direction: column; gap: 6px; max-height: 48%; overflow-y: auto; }
+  .vinfo .vmeta { font-size: .85rem; }
+  .vinfo .vmeta b { font-size: 1rem; }
+  .vinfo textarea { height: 4.6em; font-size: .95rem; }
+
+  .overlay { position: fixed; inset: 0; z-index: 45; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
   .sheet { background: var(--white); width: 100%; max-width: 560px; max-height: 92%; overflow: auto; border-radius: 14px 14px 0 0; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
   .sheet h2 { font-size: 1rem; margin: 0 0 8px; }
   .sheet label { display: block; font-weight: 700; font-size: .9rem; margin: 10px 0 4px; }
@@ -86,35 +141,92 @@
     <h1>現場写真</h1>
     <button id="open-settings" class="who" type="button" aria-label="社員名を登録・変更する">👤 <span id="who">（未登録）</span></button>
   </header>
+  <nav class="tabs">
+    <button id="tab-shoot" class="on" type="button">📷 撮る</button>
+    <button id="tab-past" type="button">🗂 過去の写真<span id="unsent-badge" class="badge" hidden></span></button>
+  </nav>
 
-  <main>
-    <div class="row">
-      <label for="site">現場名</label>
-      <input id="site" list="site-list" autocomplete="off" placeholder="例）山田様邸 太陽光">
-      <datalist id="site-list"></datalist>
-    </div>
-    <div class="recent" id="recent" hidden></div>
+  <!-- 撮る：撮った写真にコメントを付けて、アプリに保存する（送らない） -->
+  <div id="v-shoot" class="view">
+    <main>
+      <div class="row">
+        <label for="site">現場名</label>
+        <input id="site" list="site-list" autocomplete="off" placeholder="例）山田様邸 太陽光">
+        <datalist id="site-list"></datalist>
+      </div>
+      <div class="recent" id="recent" hidden></div>
 
-    <div class="list" id="list">
-      <div class="empty" id="empty">下のボタンで写真を撮ってください。<br>何枚でも続けて撮れます。写真ごとにコメントを入れて、まとめて送ります。</div>
-    </div>
-    <p class="hint" id="no-speech" hidden>「話す」が使えない機種です。コメント欄をタップし、キーボードの<b>マイク</b>で話してください。</p>
-    <div class="photo-btns">
-      <label>📷 写真を撮る<input id="camera" type="file" accept="image/*" capture="environment"></label>
-      <label class="sub">🖼 アルバムから<input id="album" type="file" accept="image/*" multiple></label>
-    </div>
-  </main>
+      <div class="list" id="list">
+        <div class="empty" id="empty">下のボタンで写真を撮ってください。<br>何枚でも続けて撮れます。写真ごとにコメントを入れて「アプリに保存」します。<br>送るのは、必要なときに「過去の写真」から選んで送ります。</div>
+      </div>
+      <p class="hint" id="no-speech" hidden>「話す」が使えない機種です。コメント欄をタップし、キーボードの<b>マイク</b>で話してください。</p>
+      <div class="photo-btns">
+        <label>📷 写真を撮る<input id="camera" type="file" accept="image/*" capture="environment"></label>
+        <label class="sub">🖼 アルバムから<input id="album" type="file" accept="image/*" multiple></label>
+      </div>
+    </main>
+    <footer>
+      <button id="save" class="btn ok" type="button" disabled>写真を撮ってください</button>
+    </footer>
+  </div>
 
-  <footer>
-    <div id="outbox" class="outbox" hidden>
-      <span>まだ送れていない写真：<b id="outbox-count">0</b>枚</span>
-      <button id="outbox-send" class="btn sub" type="button">今すぐ送る</button>
-    </div>
-    <button id="send" class="btn ok" type="button" disabled>写真を撮ってください</button>
-  </footer>
+  <!-- 過去の写真：探す・見る・選んで送る -->
+  <div id="v-past" class="view" hidden>
+    <main>
+      <div class="row">
+        <input id="q" type="search" autocomplete="off" placeholder="🔍 現場名・コメント・日付（例 11/27）で探す">
+      </div>
+      <div class="filters">
+        <button type="button" data-f="all" class="on">全部</button>
+        <button type="button" data-f="unsent">まだ送っていない</button>
+        <label class="recv">📥 受け取る<input id="recv-file" type="file"></label>
+      </div>
+      <div class="list" id="past-list"></div>
+    </main>
+    <footer>
+      <div class="selbar"><span id="sel-count">送る写真は、右上の ○ を押して選びます</span><span id="usage" class="usage"></span><button id="sel-clear" type="button" hidden>選ぶのをやめる</button></div>
+      <button id="sel-send" class="btn ok" type="button" disabled>ドライブへ送る</button>
+      <div class="two" style="margin-top:8px">
+        <button id="sel-share" class="btn sub" type="button" disabled>📤 ほかの人に渡す</button>
+        <button id="sel-del" class="btn sub danger" type="button" disabled>消す</button>
+      </div>
+    </footer>
+  </div>
 </div>
 
 <div id="msg" class="msg" role="status" tabindex="-1"></div>
+
+<div id="viewer" class="viewer" hidden>
+  <div class="vbar">
+    <button id="v-close" type="button">✕ 閉じる</button>
+    <span id="v-pos"></span>
+    <button id="v-prev" type="button" aria-label="前の写真">‹</button>
+    <button id="v-next" type="button" aria-label="次の写真">›</button>
+  </div>
+  <div class="vimg" id="v-area"><img id="v-img" alt=""></div>
+  <div class="vinfo">
+    <div class="vsent" id="v-sent"></div>
+    <div class="vmeta" id="v-meta"></div>
+    <textarea id="v-comment" placeholder="コメント（直せます）"></textarea>
+    <div class="two">
+      <button id="v-select" class="btn ok" type="button">送る写真に選ぶ</button>
+      <button id="v-del" class="btn sub danger" type="button">消す</button>
+    </div>
+  </div>
+</div>
+
+<!-- ほかの人に渡す：ファイルを作ってから、押したその場で共有画面を開く（iPhone の決まり） -->
+<div id="share" class="overlay" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="share-title">
+    <h2 id="share-title">ほかの人に渡す</h2>
+    <p id="share-info" class="hint" style="font-size:.95rem;color:var(--text)"></p>
+    <p class="hint" style="margin-top:8px">下のボタンで共有の画面が開きます。<b>LINE</b> か <b>AirDrop</b> を選んで、相手に送ってください。写真とコメントは1つのファイルにまとまって届きます。</p>
+    <p class="hint" style="margin-top:6px">受け取った人は、ファイルを「ファイル」アプリに保存してから、このアプリの「過去の写真」→「📥 受け取る」で読み込みます。LINE のファイルは日にちがたつと開けなくなるので、早めに読み込んでもらってください。</p>
+    <button id="share-go" class="btn ok" type="button" style="margin-top:12px">LINE・AirDrop で渡す</button>
+    <a id="share-dl" class="btn sub" style="text-align:center;text-decoration:none;margin-top:8px" hidden>ファイルを保存する（共有が使えない機種）</a>
+    <button id="share-close" class="btn sub" type="button">閉じる</button>
+  </section>
+</div>
 
 <div id="settings" class="overlay" hidden>
   <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -122,11 +234,12 @@
     <label for="employee">撮影者（社員名）</label>
     <p class="hint">報告書の「撮影者」に、この名前が載ります。</p>
     <input id="employee" autocomplete="name" placeholder="例）山田 太郎">
-    <p class="hint" style="margin-top:8px">写真は、あなたの Google ドライブの「現場写真（アプリ）」フォルダに保存されます。はじめて送るときに Google のログイン画面が出るので、ログインして「Google ドライブ」の許可にチェックを入れてください。事務所のパソコンで取り込むと、ドライブからは消えます。</p>
+    <p class="hint" style="margin-top:8px">撮った写真は、まずこの携帯（アプリの中）に保存されます。「過去の写真」で選んで送ると、あなたの Google ドライブの「現場写真（アプリ）」フォルダに入ります。はじめて送るときに Google のログイン画面が出るので、ログインして「Google ドライブ」の許可にチェックを入れてください。</p>
+    <p class="hint" style="margin-top:6px">注意：送っていない写真は、この携帯の中にしかありません。アプリ（ホーム画面のアイコン）を消したり、携帯をなくしたりすると、写真も消えます。大事な写真は早めに送ってください。</p>
     <button id="save-settings" class="btn" type="button">登録する</button>
     <button id="settings-close" class="btn sub" type="button">閉じる</button>
     <button id="open-install" class="btn sub" type="button">📲 ホーム画面への追加のしかた</button>
-    <p class="hint" style="margin-top:10px;text-align:center">アプリの版：11（Google ドライブ保存・複数枚・iPhone はキーボードのマイク）</p>
+    <p class="hint" style="margin-top:10px;text-align:center">アプリの版：12（アプリの中に保存・過去の写真を探す・選んで送る・ほかの人に渡す）</p>
   </section>
 </div>
 
@@ -149,8 +262,8 @@
   </section>
 </div>
 
-<script src="config.js?v=11"></script>
+<script src="config.js?v=12"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>
